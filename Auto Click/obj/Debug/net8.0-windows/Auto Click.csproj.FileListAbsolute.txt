@@ -1,19 +1,38 @@
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\bin\Debug\net8.0-windows\Auto Click.exe
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\bin\Debug\net8.0-windows\Auto Click.deps.json
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\bin\Debug\net8.0-windows\Auto Click.runtimeconfig.json
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\bin\Debug\net8.0-windows\Auto Click.dll
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\bin\Debug\net8.0-windows\Auto Click.pdb
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto_Click.Form1.resources
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.csproj.GenerateResource.cache
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.AssemblyInfoInputs.cache
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.AssemblyInfo.cs
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.csproj.CoreCompileInputs.cache
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.dll
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\refint\Auto Click.dll
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.pdb
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.genruntimeconfig.cache
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\ref\Auto Click.dll
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\FlowRunner.MainForm.resources
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\Auto Click.sourcelink.json
-C:\Users\Kassenmeister\Desktop\App\Auto Click\Auto Click\obj\Debug\net8.0-windows\FlowRunner.CheckpointComparer.resources
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/bin/Debug/net8.0-windows/Auto Click.exe
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/bin/Debug/net8.0-windows/Auto Click.deps.json
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/bin/Debug/net8.0-windows/Auto Click.runtimeconfig.json
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/bin/Debug/net8.0-windows/Auto Click.dll
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/bin/Debug/net8.0-windows/Auto Click.pdb
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto_Click.Form1.resources
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.csproj.GenerateResource.cache
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.GeneratedMSBuildEditorConfig.editorconfig
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.AssemblyInfoInputs.cache
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.AssemblyInfo.cs
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.csproj.CoreCompileInputs.cache
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.dll
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/refint/Auto Click.dll
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.pdb
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.genruntimeconfig.cache
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/ref/Auto Click.dll
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/FlowRunner.MainForm.resources
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/Auto Click.sourcelink.json
+C:/Users/Kassenmeister/Desktop/App/Auto Click/Auto Click/obj/Debug/net8.0-windows/FlowRunner.CheckpointComparer.resources
+/home/runner/work/app-tester/app-tester/Auto Click/bin/Debug/net8.0-windows/Auto Click
+/home/runner/work/app-tester/app-tester/Auto Click/bin/Debug/net8.0-windows/Auto Click.deps.json
+/home/runner/work/app-tester/app-tester/Auto Click/bin/Debug/net8.0-windows/Auto Click.runtimeconfig.json
+/home/runner/work/app-tester/app-tester/Auto Click/bin/Debug/net8.0-windows/Auto Click.dll
+/home/runner/work/app-tester/app-tester/Auto Click/bin/Debug/net8.0-windows/Auto Click.pdb
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/FlowRunner.CheckpointComparer.resources
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto_Click.Form1.resources
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/FlowRunner.MainForm.resources
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.csproj.GenerateResource.cache
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.GeneratedMSBuildEditorConfig.editorconfig
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.AssemblyInfoInputs.cache
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.AssemblyInfo.cs
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.csproj.CoreCompileInputs.cache
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.sourcelink.json
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.dll
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/refint/Auto Click.dll
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.pdb
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/Auto Click.genruntimeconfig.cache
+/home/runner/work/app-tester/app-tester/Auto Click/obj/Debug/net8.0-windows/ref/Auto Click.dll

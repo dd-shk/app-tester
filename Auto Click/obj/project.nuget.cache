@@ -1,8 +1,13 @@
 {
   "version": 2,
-  "dgSpecHash": "BJHxvASEjgs=",
+  "dgSpecHash": "C80kC1rX9iY=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Kassenmeister\\Desktop\\App\\Auto Click\\Auto Click\\Auto Click.csproj",
-  "expectedPackageFiles": [],
+  "projectFilePath": "/home/runner/work/app-tester/app-tester/Auto Click/Auto Click.csproj",
+  "expectedPackageFiles": [
+    "/home/runner/.nuget/packages/microsoft.netcore.app.ref/8.0.23/microsoft.netcore.app.ref.8.0.23.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.windowsdesktop.app.ref/8.0.23/microsoft.windowsdesktop.app.ref.8.0.23.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.aspnetcore.app.ref/8.0.23/microsoft.aspnetcore.app.ref.8.0.23.nupkg.sha512",
+    "/home/runner/.nuget/packages/microsoft.netcore.app.host.linux-x64/8.0.23/microsoft.netcore.app.host.linux-x64.8.0.23.nupkg.sha512"
+  ],
   "logs": []
 }
