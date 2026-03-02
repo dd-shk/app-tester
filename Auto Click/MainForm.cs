@@ -895,11 +895,12 @@ namespace FlowRunner
                                             cpOk++;
                                             SetStatus($"CP OK {cpOk}/{cpTotal}  {s.Name}  diff={lastRes.DiffPercent:0.000}%");
 
-                                            lastRes.DiffImage?.Dispose();
+                                            lastRes?.DiffImage?.Dispose();
                                             lastRes = null;
 
                                             lastActual.Dispose();
                                             lastActual = null;
+
                                             break;
                                         }
 
@@ -918,7 +919,7 @@ namespace FlowRunner
 
                                             expected.Save(expOut, ImageFormat.Png);
                                             lastActual.Save(actOut, ImageFormat.Png);
-                                            lastRes.DiffImage?.Save(diffOut, ImageFormat.Png);
+                                            lastRes?.DiffImage?.Save(diffOut, ImageFormat.Png);
 
                                             string showPath = actOut;
 
@@ -959,7 +960,7 @@ namespace FlowRunner
                                             SetStatus($"CP FAIL {cpFail}/{cpTotal}  {flow.Name} / {s.Name}");
                                             RefreshTree();
 
-                                            lastRes.DiffImage?.Dispose();
+                                            lastRes?.DiffImage?.Dispose();
                                             lastRes = null;
 
                                             lastActual.Dispose();
