@@ -1,4 +1,4 @@
-namespace Auto_Click
+namespace FlowRunner
 {
     public partial class Form1 : Form
     {

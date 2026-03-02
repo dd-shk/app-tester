@@ -47,7 +47,6 @@ namespace FlowRunner
                 ShowFatal("Fatal error", ex);
             }
         }
-        [STAThread]
 
         private static void ShowFatal(string title, Exception ex)
         {
