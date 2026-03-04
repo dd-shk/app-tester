@@ -59,6 +59,15 @@ namespace FlowRunner
         private readonly PictureBox _previewExpected = new();
         private readonly PictureBox _previewActual = new();
 
+        private readonly Panel _canvasView = new();
+
+        // Zoom / comparison canvas state
+        private enum ZoomMode { FitToCanvas, ActualSize, Custom }
+        private ZoomMode _canvasZoomMode = ZoomMode.ActualSize;
+        private float _canvasZoomLevel = 1.0f;
+        private Bitmap? _canvasImage;
+        private string? _canvasLabel;
+
         private readonly System.Windows.Forms.Timer _clock = new() { Interval = 1000 };
         private readonly ToolTip _tooltip = new();
 
@@ -168,6 +177,39 @@ namespace FlowRunner
 
             _split.Panel1.Controls.Add(_previewExpected);
             _split.Panel2.Controls.Add(_previewActual);
+
+            // Custom-painted canvas view for zoom/comparison display
+            _canvasView.Dock = DockStyle.Fill;
+            _canvasView.BackColor = Color.FromArgb(18, 22, 36);
+            _canvasView.Visible = false;
+            _canvasView.Paint += Canvas_Paint;
+            _canvasView.MouseWheel += Canvas_MouseWheel;
+            _canvas.Controls.Add(_canvasView);
+
+            // Zoom controls panel (added last = processed first = docks to bottom)
+            var zoomPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 35,
+                BackColor = Color.FromArgb(23, 32, 42),
+                FlowDirection = FlowDirection.LeftToRight,
+                Padding = new Padding(5)
+            };
+
+            var btnZoomOut = CreateZoomButton("➖", "Zoom out");
+            btnZoomOut.Click += (_, __) => AdjustZoom(-0.1f);
+            var btnZoomReset = CreateZoomButton("1:1", "Actual size (100%)");
+            btnZoomReset.Click += (_, __) => SetZoom(ZoomMode.ActualSize);
+            var btnZoomIn = CreateZoomButton("➕", "Zoom in");
+            btnZoomIn.Click += (_, __) => AdjustZoom(0.1f);
+            var btnZoomFit = CreateZoomButton("⊡", "Fit to window");
+            btnZoomFit.Click += (_, __) => SetZoom(ZoomMode.FitToCanvas);
+
+            zoomPanel.Controls.Add(btnZoomOut);
+            zoomPanel.Controls.Add(btnZoomReset);
+            zoomPanel.Controls.Add(btnZoomIn);
+            zoomPanel.Controls.Add(btnZoomFit);
+            _canvas.Controls.Add(zoomPanel);
 
             // ✅ SplitterDistance را فقط بعد از اینکه فرم واقعاً اندازه گرفت ست کن
             Shown += (_, __) => BeginInvoke(new Action(SafeInitSplit));
@@ -1025,6 +1067,8 @@ namespace FlowRunner
                                             cpOk++;
                                             SetStatus($"CP OK {cpOk}/{cpTotal}  {s.Name}  diff={lastRes.DiffPercent:0.000}%");
 
+                                            ShowCheckpointSuccess(expected, lastRes.DiffPercent, allowedDiffPercent, cpTotal - 1);
+
                                             lastRes?.DiffImage?.Dispose();
                                             lastRes = null;
 
@@ -1086,7 +1130,7 @@ namespace FlowRunner
                                                 o.LastMismatchExpectedPath = expOut;
                                             }
 
-                                            ShowImagesOnCanvas(expOut, showPath);
+                                            ShowCheckpointComparison(expected, lastActual, lastRes?.DiffPercent ?? 100.0, allowedDiffPercent, cpTotal - 1);
                                             SetStatus($"CP FAIL {cpFail}/{cpTotal}  {flow.Name} / {s.Name}");
                                             RefreshFlowSelector();
 
@@ -1425,8 +1469,185 @@ namespace FlowRunner
             pb.BackColor = Color.FromArgb(10, 12, 20);
         }
 
+        // ============= Canvas Paint / Zoom =============
+        private void Canvas_Paint(object? sender, PaintEventArgs e)
+        {
+            if (_canvasImage == null) return;
+
+            var g = e.Graphics;
+            g.Clear(Color.FromArgb(18, 22, 36));
+
+            float scale = _canvasZoomLevel;
+
+            if (_canvasZoomMode == ZoomMode.FitToCanvas)
+            {
+                float scaleX = (float)_canvasView.Width / _canvasImage.Width;
+                float scaleY = (float)_canvasView.Height / _canvasImage.Height;
+                scale = Math.Min(scaleX, scaleY);
+            }
+
+            int drawW = (int)(_canvasImage.Width * scale);
+            int drawH = (int)(_canvasImage.Height * scale);
+            int drawX = (_canvasView.Width - drawW) / 2;
+            int drawY = (_canvasView.Height - drawH) / 2;
+
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            g.DrawImage(_canvasImage, drawX, drawY, drawW, drawH);
+
+            // Draw label
+            if (!string.IsNullOrEmpty(_canvasLabel))
+            {
+                using var font = new Font("Segoe UI", 11f, FontStyle.Bold);
+                using var brush = new SolidBrush(Color.White);
+                using var bgBrush = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
+
+                var size = g.MeasureString(_canvasLabel, font);
+                g.FillRectangle(bgBrush, 10, 10, size.Width + 10, size.Height + 6);
+                g.DrawString(_canvasLabel, font, brush, 15, 13);
+            }
+
+            // Draw zoom level indicator
+            var zoomText = $"Zoom: {scale * 100:F0}%";
+            using (var font = new Font("Segoe UI", 9f))
+            using (var brush = new SolidBrush(Color.Gray))
+            {
+                var size = g.MeasureString(zoomText, font);
+                g.DrawString(zoomText, font, brush, _canvasView.Width - size.Width - 10, _canvasView.Height - size.Height - 10);
+            }
+        }
+
+        private void Canvas_MouseWheel(object? sender, MouseEventArgs e)
+        {
+            if (_canvasImage == null) return;
+
+            float delta = e.Delta > 0 ? 0.1f : -0.1f;
+            AdjustZoom(delta);
+        }
+
+        private Button CreateZoomButton(string text, string tooltip)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Width = 50,
+                Height = 28,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(52, 73, 94),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 10f),
+                Cursor = Cursors.Hand,
+                Margin = new Padding(2)
+            };
+            btn.FlatAppearance.BorderColor = Color.FromArgb(70, 90, 110);
+
+            _tooltips.SetToolTip(btn, tooltip);
+
+            btn.MouseEnter += (s, e) => btn.BackColor = Color.FromArgb(70, 90, 110);
+            btn.MouseLeave += (s, e) => btn.BackColor = Color.FromArgb(52, 73, 94);
+
+            return btn;
+        }
+
+        private void AdjustZoom(float delta)
+        {
+            _canvasZoomMode = ZoomMode.Custom;
+            _canvasZoomLevel = Math.Max(0.1f, Math.Min(5.0f, _canvasZoomLevel + delta));
+            _canvasView.Invalidate();
+        }
+
+        private void SetZoom(ZoomMode mode)
+        {
+            _canvasZoomMode = mode;
+            if (mode == ZoomMode.ActualSize)
+                _canvasZoomLevel = 1.0f;
+            _canvasView.Invalidate();
+        }
+
+        private void ShowCheckpointComparison(Bitmap expected, Bitmap actual, double diffPercent, double allowedDiffPercent, int checkpointIndex)
+        {
+            int spacing = 20;
+            int labelHeight = 40;
+            int footerHeight = 40;
+
+            int maxWidth = Math.Max(expected.Width, actual.Width);
+            int maxHeight = Math.Max(expected.Height, actual.Height);
+
+            var combined = new Bitmap(
+                maxWidth * 2 + spacing * 3,
+                maxHeight + labelHeight + footerHeight,
+                PixelFormat.Format32bppArgb
+            );
+
+            using (var g = Graphics.FromImage(combined))
+            {
+                g.Clear(Color.FromArgb(30, 34, 46));
+
+                // Left side - Expected
+                int leftX = spacing;
+                int leftY = labelHeight;
+
+                using (var headerBrush = new SolidBrush(Color.FromArgb(46, 204, 113)))
+                    g.FillRectangle(headerBrush, leftX, 0, maxWidth, labelHeight);
+
+                using (var font = new Font("Segoe UI", 14f, FontStyle.Bold))
+                using (var brush = new SolidBrush(Color.White))
+                    g.DrawString("✅ Expected", font, brush, leftX + 10, 10);
+
+                g.DrawImage(expected, leftX, leftY);
+
+                // Right side - Actual
+                int rightX = maxWidth + spacing * 2;
+                int rightY = labelHeight;
+
+                using (var headerBrush = new SolidBrush(Color.FromArgb(231, 76, 60)))
+                    g.FillRectangle(headerBrush, rightX, 0, maxWidth, labelHeight);
+
+                using (var font = new Font("Segoe UI", 14f, FontStyle.Bold))
+                using (var brush = new SolidBrush(Color.White))
+                    g.DrawString("❌ Actual", font, brush, rightX + 10, 10);
+
+                g.DrawImage(actual, rightX, rightY);
+
+                // Footer with match info
+                int footerY = maxHeight + labelHeight;
+                using (var footerBrush = new SolidBrush(Color.FromArgb(23, 32, 42)))
+                    g.FillRectangle(footerBrush, 0, footerY, combined.Width, footerHeight);
+
+                var matchText = $"Checkpoint #{checkpointIndex + 1} Failed | Diff: {diffPercent:F3}% | Allowed: {allowedDiffPercent:F3}% | Excess: {(diffPercent - allowedDiffPercent):F3}%";
+                using (var font = new Font("Segoe UI", 11f, FontStyle.Bold))
+                using (var brush = new SolidBrush(Color.FromArgb(231, 76, 60)))
+                    g.DrawString(matchText, font, brush, spacing, footerY + 10);
+            }
+
+            _canvasImage?.Dispose();
+            _canvasImage = combined;
+            _canvasLabel = $"❌ Checkpoint {checkpointIndex + 1} Failed - Comparison View";
+            _canvasZoomMode = ZoomMode.FitToCanvas;
+            _split.Visible = false;
+            _canvasView.Visible = true;
+            _canvasView.Invalidate();
+        }
+
+        private void ShowCheckpointSuccess(Bitmap checkpoint, double diffPercent, double allowedDiffPercent, int checkpointIndex)
+        {
+            _canvasImage?.Dispose();
+            _canvasImage = (Bitmap)checkpoint.Clone();
+            _canvasLabel = $"✅ Checkpoint {checkpointIndex + 1} Passed | Diff: {diffPercent:F3}% (Allowed: {allowedDiffPercent:F3}%)";
+            _canvasZoomMode = ZoomMode.ActualSize;
+            _canvasZoomLevel = 1.0f;
+            _split.Visible = false;
+            _canvasView.Visible = true;
+            _canvasView.Invalidate();
+        }
+
         private void ShowImagesOnCanvas(string? expectedPath, string? actualOrOverlayPath)
         {
+            // Restore split view when called for traditional file-based display
+            _canvasImage?.Dispose();
+            _canvasImage = null;
+            _canvasView.Visible = false;
+            _split.Visible = true;
+
             try
             {
                 // dispose قبلی (leak نشه)
