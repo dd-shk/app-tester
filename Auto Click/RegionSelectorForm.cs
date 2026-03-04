@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace FlowRunner
@@ -8,6 +9,7 @@ namespace FlowRunner
     {
         private readonly Bitmap _frozen;
         private readonly Rectangle _vs;
+        private Image? _scaledPreview;
 
         private bool _drag;
         private Point _startScreen;
@@ -28,8 +30,31 @@ namespace FlowRunner
             DoubleBuffered = true;
 
             StartPosition = FormStartPosition.Manual;
-            Bounds = _vs; // screen coords
+            Bounds = _vs;
             Cursor = Cursors.Cross;
+
+            _scaledPreview = CreateScaledPreview();
+        }
+
+        private Image CreateScaledPreview()
+        {
+            if (_frozen.Width > 3840 || _frozen.Height > 2160)
+            {
+                var scale = 0.5;
+                var newWidth = (int)(_frozen.Width * scale);
+                var newHeight = (int)(_frozen.Height * scale);
+
+                var scaled = new Bitmap(newWidth, newHeight);
+                using (var g = Graphics.FromImage(scaled))
+                {
+                    g.InterpolationMode = InterpolationMode.Low;
+                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.DrawImage(_frozen, 0, 0, newWidth, newHeight);
+                }
+                return scaled;
+            }
+
+            return _frozen;
         }
 
         public static Rectangle Pick(Bitmap frozen, Rectangle virtualScreen)
@@ -55,8 +80,6 @@ namespace FlowRunner
             if (e.Button != MouseButtons.Left) return;
 
             _drag = true;
-
-            // ✅ DPI-safe: screen coords واقعی
             _startScreen = Cursor.Position;
             _endScreen = _startScreen;
 
@@ -68,9 +91,7 @@ namespace FlowRunner
         {
             if (!_drag) return;
 
-            // ✅ DPI-safe
             _endScreen = Cursor.Position;
-
             Invalidate();
             base.OnMouseMove(e);
         }
@@ -80,10 +101,7 @@ namespace FlowRunner
             if (!_drag || e.Button != MouseButtons.Left) return;
 
             _drag = false;
-
-            // ✅ DPI-safe
             _endScreen = Cursor.Position;
-
             _selected = Normalize(_startScreen, _endScreen);
 
             if (_selected.Width < 10 || _selected.Height < 10)
@@ -103,18 +121,20 @@ namespace FlowRunner
         {
             base.OnPaint(e);
 
-            // ✅ تصویر Frozen را به اندازه فرم رسم کن (در DPI مختلف هم align میشه)
-            e.Graphics.DrawImage(_frozen, new Rectangle(0, 0, Width, Height));
+            var imgToDraw = _scaledPreview ?? _frozen;
 
-            // overlay
+            e.Graphics.InterpolationMode = InterpolationMode.Low;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
+            e.Graphics.CompositingQuality = CompositingQuality.HighSpeed;
+
+            e.Graphics.DrawImage(imgToDraw, new Rectangle(0, 0, Width, Height));
+
             using (var overlay = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
                 e.Graphics.FillRectangle(overlay, new Rectangle(0, 0, Width, Height));
 
             if (_drag)
             {
                 var rScreen = Normalize(_startScreen, _endScreen);
-
-                // screen -> client
                 var p1 = PointToClient(new Point(rScreen.Left, rScreen.Top));
                 var p2 = PointToClient(new Point(rScreen.Right, rScreen.Bottom));
                 var rClient = Normalize(p1, p2);
@@ -124,7 +144,29 @@ namespace FlowRunner
 
                 using var inner = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
                 e.Graphics.FillRectangle(inner, rClient);
+
+                var dims = $"{rScreen.Width} x {rScreen.Height}";
+                using var font = new Font("Segoe UI", 12f, FontStyle.Bold);
+                using var brush = new SolidBrush(Color.White);
+                using var bgBrush = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
+
+                var size = e.Graphics.MeasureString(dims, font);
+                var textX = rClient.X + rClient.Width / 2 - size.Width / 2;
+                var textY = rClient.Y - 30;
+
+                e.Graphics.FillRectangle(bgBrush, textX - 4, textY - 2, size.Width + 8, size.Height + 4);
+                e.Graphics.DrawString(dims, font, brush, textX, textY);
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_scaledPreview != _frozen)
+                    _scaledPreview?.Dispose();
+            }
+            base.Dispose(disposing);
         }
 
         private static Rectangle Normalize(Point a, Point b)
