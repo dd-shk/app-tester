@@ -11,6 +11,7 @@ namespace FlowRunner
         private readonly Bitmap _scaledPreview;
         private readonly bool _ownScaledPreview;
         private readonly Rectangle _vs;
+        // ❌ خط _scaledPreviewBitmap پاک شد
 
         private bool _drag;
         private Point _startScreen;
@@ -36,8 +37,7 @@ namespace FlowRunner
             Bounds = _vs;
             Cursor = Cursors.Cross;
 
-            // Pre-scale once for fast repeated painting; only allocate a new bitmap when
-            // the frozen screenshot dimensions differ from the virtual screen (e.g. DPI scaling).
+            // Pre-scale once for fast repeated painting
             if (frozen.Width == virtualScreen.Width && frozen.Height == virtualScreen.Height)
             {
                 _scaledPreview = frozen;
@@ -130,7 +130,7 @@ namespace FlowRunner
             e.Graphics.SmoothingMode = SmoothingMode.None;
             e.Graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed;
 
-            // ✅ تصویر Frozen را به اندازه فرم رسم کن (در DPI مختلف هم align میشه)
+            // Draw scaled preview
             e.Graphics.DrawImageUnscaled(_scaledPreview, 0, 0);
 
             using (var overlay = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
@@ -158,6 +158,7 @@ namespace FlowRunner
                 if (ty + DimTextHeight > Height) ty = rClient.Top - DimTextHeight;
                 e.Graphics.DrawString(dimText, dimFont, dimBrush, tx, ty);
             }
+            // ❌ خط base.Dispose پاک شد (اشتباه اینجا بود!)
         }
 
         private static Rectangle Normalize(Point a, Point b)
