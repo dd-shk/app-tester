@@ -1541,10 +1541,46 @@ namespace FlowRunner
             }
         }
 
-        // ✅ نمایش تکی = فقط سمت چپ
+        // Display a single checkpoint image (e.g., when loading a flow)
         private void ShowImageOnCanvas(string path)
         {
-            ShowImagesOnCanvas(path, null);
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    // If file doesn't exist, clear the canvas
+                    _canvasImage?.Dispose();
+                    _canvasImage = null;
+                    _canvasView.Visible = false;
+                    _split.Visible = true;
+                    return;
+                }
+
+                // Load the checkpoint image
+                using var loaded = LoadBitmapNoLock(path);
+
+                _canvasImage?.Dispose();
+                _canvasImage = (Bitmap)loaded.Clone();
+                _canvasLabel = "Checkpoint Preview";
+                _canvasZoomMode = ZoomMode.ActualSize;
+                _canvasZoomLevel = 1.0f;
+
+                // Show canvas, hide split
+                _split.Visible = false;
+                _canvasView.Visible = true;
+
+                UpdateCanvasScrollSize();
+                _canvasView.Invalidate();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Exception($"ShowImageOnCanvas failed: {path}", ex);
+                // On error, show split view with nothing
+                _canvasImage?.Dispose();
+                _canvasImage = null;
+                _canvasView.Visible = false;
+                _split.Visible = true;
+            }
         }
 
         private static Bitmap CaptureVirtualScreen()
