@@ -261,7 +261,7 @@ namespace FlowRunner
             public DateTime LastRunUtc { get; set; }
         }
 
-        private static void StyleButton(Button btn, string emoji, string text, Color color)
+        private static void SetupButton(Button b, string text, bool accent = false, bool danger = false)
         {
             b.Text = text;
             b.Dock = DockStyle.Top;

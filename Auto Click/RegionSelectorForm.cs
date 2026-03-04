@@ -11,8 +11,6 @@ namespace FlowRunner
         private readonly Bitmap _scaledPreview;
         private readonly bool _ownScaledPreview;
         private readonly Rectangle _vs;
-        private readonly Bitmap? _scaledPreviewBitmap; // Non-null only when a new scaled bitmap was created
-        private Image? _scaledPreview;
 
         private bool _drag;
         private Point _startScreen;
@@ -160,7 +158,6 @@ namespace FlowRunner
                 if (ty + DimTextHeight > Height) ty = rClient.Top - DimTextHeight;
                 e.Graphics.DrawString(dimText, dimFont, dimBrush, tx, ty);
             }
-            base.Dispose(disposing);
         }
 
         private static Rectangle Normalize(Point a, Point b)
