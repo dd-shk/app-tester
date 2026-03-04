@@ -28,8 +28,17 @@ namespace FlowRunner
 
         private readonly GlobalHotkeys _hotkeys = new();
 
+        // ===== Batch Run State =====
+        private readonly Button _btnRunSelected = new();
+        private readonly Button _btnRunAllChecked = new();
+        private readonly Button _btnStopBatch = new();
+        private readonly Label _lblBatchProgress = new();
+        private readonly Label _lblBatchStats = new();
+        private CancellationTokenSource? _batchCts;
+        private bool _isBatchRunning;
+
         // ===== UI =====
-        private readonly ComboBox _cmbCategory = new();
+        private readonly CheckedListBox _chkCategories = new();
         private readonly ListBox _lstFlows = new();
         private readonly Panel _flowPanel = new();
         private readonly Panel _right = new();
@@ -99,11 +108,14 @@ namespace FlowRunner
             _flowPanel.Width = 280;
             _flowPanel.BackColor = Color.FromArgb(18, 22, 36);
 
-            _cmbCategory.Dock = DockStyle.Top;
-            _cmbCategory.BackColor = Color.FromArgb(22, 28, 45);
-            _cmbCategory.ForeColor = Color.Gainsboro;
-            _cmbCategory.DropDownStyle = ComboBoxStyle.DropDownList;
-            _cmbCategory.SelectedIndexChanged += CmbCategory_SelectedIndexChanged;
+            _chkCategories.Dock = DockStyle.Top;
+            _chkCategories.Height = 120;
+            _chkCategories.BackColor = Color.FromArgb(30, 34, 46);
+            _chkCategories.ForeColor = Color.Gainsboro;
+            _chkCategories.BorderStyle = BorderStyle.None;
+            _chkCategories.Font = new Font("Segoe UI", 9.5f);
+            _chkCategories.CheckOnClick = true;
+            _chkCategories.ItemCheck += ChkCategories_ItemCheck;
 
             var flowBtnsPanel = new Panel { Dock = DockStyle.Bottom, Height = 36, BackColor = Color.FromArgb(18, 22, 36) };
             var btnRefresh = new Button
@@ -140,13 +152,14 @@ namespace FlowRunner
             _lstFlows.BorderStyle = BorderStyle.None;
             _lstFlows.DrawMode = DrawMode.OwnerDrawFixed;
             _lstFlows.ItemHeight = 24;
+            _lstFlows.SelectionMode = SelectionMode.MultiExtended;
             _lstFlows.DrawItem += LstFlows_DrawItem;
-            _lstFlows.SelectedIndexChanged += (_, __) => LoadSelectedFlowToEditor();
+            _lstFlows.SelectedIndexChanged += (_, __) => { LoadSelectedFlowToEditor(); UpdateBatchButtons(); };
             _lstFlows.DoubleClick += (_, __) => DoRunSelected();
 
             _flowPanel.Controls.Add(_lstFlows);
             _flowPanel.Controls.Add(flowBtnsPanel);
-            _flowPanel.Controls.Add(_cmbCategory);
+            _flowPanel.Controls.Add(_chkCategories);
             Controls.Add(_flowPanel);
 
             _right.Dock = DockStyle.Right;
@@ -279,6 +292,7 @@ namespace FlowRunner
             _tooltips.SetToolTip(_btnDelete, "Permanently delete the selected flow");
 
             InitializeTestSuiteUI();
+            AddBatchButtons();
 
             _hotkeys.KeyPressed += OnHotkey;
             _hotkeys.Start();
@@ -345,62 +359,305 @@ namespace FlowRunner
         {
             Directory.CreateDirectory(FlowStorage.FlowsDir);
 
-            var selected = _cmbCategory.SelectedItem as string;
-            _cmbCategory.SelectedIndexChanged -= CmbCategory_SelectedIndexChanged;
-            _cmbCategory.Items.Clear();
+            // Remember which categories were checked
+            var checkedNames = _chkCategories.CheckedItems
+                .Cast<object>()
+                .Select(o => o.ToString() ?? "")
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var catDir in Directory.GetDirectories(FlowStorage.FlowsDir))
-                _cmbCategory.Items.Add(Path.GetFileName(catDir));
+            _chkCategories.ItemCheck -= ChkCategories_ItemCheck;
+            _chkCategories.Items.Clear();
 
-            if (_cmbCategory.Items.Count == 0)
+            var categories = Directory.GetDirectories(FlowStorage.FlowsDir)
+                .Select(d =>
+                {
+                    var name = Path.GetFileName(d);
+                    var flowCount = Directory.GetDirectories(d)
+                        .Count(fd => File.Exists(Path.Combine(fd, "flow.json")));
+                    return (name, flowCount);
+                })
+                .Where(c => !string.IsNullOrEmpty(c.name))
+                .OrderBy(c => c.name)
+                .ToList();
+
+            if (categories.Count == 0)
             {
                 Directory.CreateDirectory(Path.Combine(FlowStorage.FlowsDir, "General"));
-                _cmbCategory.Items.Add("General");
+                categories.Add(("General", 0));
             }
 
-            _cmbCategory.SelectedIndexChanged += CmbCategory_SelectedIndexChanged;
+            foreach (var (name, count) in categories)
+                _chkCategories.Items.Add($"{name} ({count} flows)");
 
-            if (selected != null && _cmbCategory.Items.Contains(selected))
-                _cmbCategory.SelectedItem = selected;
-            else if (_cmbCategory.Items.Count > 0)
-                _cmbCategory.SelectedIndex = 0;
-            else
-                PopulateFlowList();
+            // Restore checked state
+            for (int i = 0; i < _chkCategories.Items.Count; i++)
+            {
+                var rawName = GetCategoryNameFromItem(_chkCategories.Items[i]?.ToString() ?? "");
+                if (checkedNames.Contains(rawName))
+                    _chkCategories.SetItemChecked(i, true);
+            }
+
+            _chkCategories.ItemCheck += ChkCategories_ItemCheck;
+
+            UpdateFlowsFromCheckedCategories();
         }
 
-        private void CmbCategory_SelectedIndexChanged(object? sender, EventArgs e) => PopulateFlowList();
-
-        private void PopulateFlowList()
+        private void ChkCategories_ItemCheck(object? sender, ItemCheckEventArgs e)
         {
-            var prevPath = GetSelectedFlowJsonPath();
+            BeginInvoke(() => UpdateFlowsFromCheckedCategories());
+        }
+
+        private static string GetCategoryNameFromItem(string item)
+        {
+            // Parse "CategoryName (N flows)" format
+            var match = System.Text.RegularExpressions.Regex.Match(item, @"^(.+?)\s*\(\d+ flows\)$");
+            return match.Success ? match.Groups[1].Value.Trim() : item.Trim();
+        }
+
+        private void UpdateFlowsFromCheckedCategories()
+        {
             _lstFlows.Items.Clear();
 
-            var cat = _cmbCategory.SelectedItem as string;
-            if (cat == null) return;
-
-            var catDir = Path.Combine(FlowStorage.FlowsDir, cat);
-            if (!Directory.Exists(catDir)) return;
-
-            foreach (var flowDir in Directory.GetDirectories(catDir))
+            foreach (var item in _chkCategories.CheckedItems)
             {
-                var flowName = Path.GetFileName(flowDir);
-                var flowJson = Path.Combine(flowDir, "flow.json");
-                if (!File.Exists(flowJson)) continue;
-                _lstFlows.Items.Add(new FlowItem { Name = flowName, JsonPath = flowJson });
-            }
+                var category = GetCategoryNameFromItem(item?.ToString() ?? "");
+                if (string.IsNullOrEmpty(category)) continue;
 
-            if (prevPath != null)
-            {
-                for (int i = 0; i < _lstFlows.Items.Count; i++)
+                var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(category));
+                if (!Directory.Exists(categoryDir)) continue;
+
+                foreach (var flowDir in Directory.GetDirectories(categoryDir))
                 {
-                    if (_lstFlows.Items[i] is FlowItem fi &&
-                        string.Equals(fi.JsonPath, prevPath, StringComparison.OrdinalIgnoreCase))
+                    var flowJsonPath = Path.Combine(flowDir, "flow.json");
+                    if (File.Exists(flowJsonPath))
                     {
-                        _lstFlows.SelectedIndex = i;
-                        break;
+                        var flowName = Path.GetFileName(flowDir);
+                        _lstFlows.Items.Add(new FlowItem { Name = flowName, Category = category, JsonPath = flowJsonPath });
                     }
                 }
             }
+
+            UpdateBatchButtons();
+        }
+
+        private void UpdateBatchButtons()
+        {
+            var selectedCount = _lstFlows.SelectedItems.Count;
+            var totalCount = _lstFlows.Items.Count;
+
+            _btnRunSelected.Text = $"▶️ Run Selected ({selectedCount})";
+            _btnRunSelected.Enabled = selectedCount > 0 && !_isBatchRunning;
+
+            _btnRunAllChecked.Text = $"▶️ Run All Checked ({totalCount})";
+            _btnRunAllChecked.Enabled = totalCount > 0 && !_isBatchRunning;
+        }
+
+        private void AddBatchButtons()
+        {
+            var batchPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 120,
+                BackColor = Color.FromArgb(18, 22, 36),
+                Padding = new Padding(6),
+                ColumnCount = 1,
+                RowCount = 5
+            };
+
+            _btnRunSelected.Text = "▶️ Run Selected (0)";
+            _btnRunSelected.Dock = DockStyle.Fill;
+            _btnRunSelected.FlatStyle = FlatStyle.Flat;
+            _btnRunSelected.BackColor = Color.FromArgb(155, 89, 182);
+            _btnRunSelected.ForeColor = Color.White;
+            _btnRunSelected.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            _btnRunSelected.Enabled = false;
+            _btnRunSelected.Cursor = Cursors.Hand;
+            _btnRunSelected.Click += async (_, __) => await RunSelectedFlowsAsync();
+            batchPanel.Controls.Add(_btnRunSelected, 0, 0);
+
+            _btnRunAllChecked.Text = "▶️ Run All Checked (0)";
+            _btnRunAllChecked.Dock = DockStyle.Fill;
+            _btnRunAllChecked.FlatStyle = FlatStyle.Flat;
+            _btnRunAllChecked.BackColor = Color.FromArgb(46, 204, 113);
+            _btnRunAllChecked.ForeColor = Color.White;
+            _btnRunAllChecked.Font = new Font("Segoe UI", 9f, FontStyle.Bold);
+            _btnRunAllChecked.Enabled = false;
+            _btnRunAllChecked.Cursor = Cursors.Hand;
+            _btnRunAllChecked.Click += async (_, __) => await RunAllCheckedFlowsAsync();
+            batchPanel.Controls.Add(_btnRunAllChecked, 0, 1);
+
+            _btnStopBatch.Text = "⏹️ Stop Batch";
+            _btnStopBatch.Dock = DockStyle.Fill;
+            _btnStopBatch.FlatStyle = FlatStyle.Flat;
+            _btnStopBatch.BackColor = Color.FromArgb(192, 57, 43);
+            _btnStopBatch.ForeColor = Color.White;
+            _btnStopBatch.Font = new Font("Segoe UI", 9f);
+            _btnStopBatch.Visible = false;
+            _btnStopBatch.Cursor = Cursors.Hand;
+            _btnStopBatch.Click += (_, __) => StopBatchRun();
+            batchPanel.Controls.Add(_btnStopBatch, 0, 2);
+
+            _lblBatchProgress.Text = "Ready";
+            _lblBatchProgress.Dock = DockStyle.Fill;
+            _lblBatchProgress.ForeColor = Color.Gainsboro;
+            _lblBatchProgress.Font = new Font("Segoe UI", 9f);
+            _lblBatchProgress.TextAlign = ContentAlignment.MiddleLeft;
+            batchPanel.Controls.Add(_lblBatchProgress, 0, 3);
+
+            _lblBatchStats.Text = "✅ 0 | ❌ 0";
+            _lblBatchStats.Dock = DockStyle.Fill;
+            _lblBatchStats.ForeColor = Color.Gray;
+            _lblBatchStats.Font = new Font("Segoe UI", 8.5f);
+            _lblBatchStats.TextAlign = ContentAlignment.MiddleLeft;
+            batchPanel.Controls.Add(_lblBatchStats, 0, 4);
+
+            _flowPanel.Controls.Add(batchPanel);
+        }
+
+        private async Task RunSelectedFlowsAsync()
+        {
+            if (_isBatchRunning || _lstFlows.SelectedItems.Count == 0) return;
+
+            var flows = _lstFlows.SelectedItems.Cast<FlowItem>().ToList();
+            await RunBatchAsync(flows);
+        }
+
+        private async Task RunAllCheckedFlowsAsync()
+        {
+            if (_isBatchRunning || _lstFlows.Items.Count == 0) return;
+
+            var flows = _lstFlows.Items.Cast<FlowItem>().ToList();
+            await RunBatchAsync(flows);
+        }
+
+        private async Task RunBatchAsync(List<FlowItem> flows)
+        {
+            if (flows.Count == 0) return;
+
+            _isBatchRunning = true;
+            _batchCts = new CancellationTokenSource();
+
+            _btnRunSelected.Enabled = false;
+            _btnRunAllChecked.Enabled = false;
+            _btnStopBatch.Visible = true;
+
+            int total = flows.Count;
+            int passed = 0;
+            int failed = 0;
+            var failedFlows = new List<(string flow, string reason)>();
+            var startTime = DateTime.Now;
+
+            AppLog.Info($"Starting batch run of {total} flows");
+
+            for (int i = 0; i < total; i++)
+            {
+                if (_batchCts.Token.IsCancellationRequested)
+                {
+                    SetStatus("⏹️ Batch run cancelled");
+                    break;
+                }
+
+                var flowItem = flows[i];
+
+                _lblBatchProgress.Text = $"⏳ Running {i + 1}/{total}: {flowItem.Name}";
+                SetStatus($"Batch {i + 1}/{total}: {flowItem.Category}/{flowItem.Name}");
+
+                try
+                {
+                    if (!File.Exists(flowItem.JsonPath))
+                    {
+                        failed++;
+                        failedFlows.Add(($"{flowItem.Category}/{flowItem.Name}", "Flow file not found"));
+                        _lblBatchStats.Text = $"✅ {passed} | ❌ {failed}";
+                        continue;
+                    }
+
+                    var flow = FlowStorage.LoadFlow(flowItem.JsonPath);
+
+                    _runOutcomes[flowItem.JsonPath] = new RunOutcome
+                    {
+                        HasMismatch = false,
+                        LastRunUtc = DateTime.UtcNow
+                    };
+
+                    await RunFlowAsync(flow, flowItem.JsonPath);
+
+                    if (_runOutcomes.TryGetValue(flowItem.JsonPath, out var outcome) && !outcome.HasMismatch)
+                    {
+                        passed++;
+                        AppLog.Info($"✅ {flowItem.Category}/{flowItem.Name} passed");
+                    }
+                    else
+                    {
+                        failed++;
+                        var reason = (outcome?.HasMismatch == true ? outcome.LastMismatchStep : null) ?? "Run failed";
+                        failedFlows.Add(($"{flowItem.Category}/{flowItem.Name}", reason));
+                        AppLog.Warn($"❌ {flowItem.Category}/{flowItem.Name} failed: {reason}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    failedFlows.Add(($"{flowItem.Category}/{flowItem.Name}", ex.Message));
+                    AppLog.Exception($"Batch run error: {flowItem.Category}/{flowItem.Name}", ex);
+                }
+
+                _lblBatchStats.Text = $"✅ {passed} | ❌ {failed}";
+
+                if (i < total - 1)
+                {
+                    try { await Task.Delay(500, _batchCts.Token); }
+                    catch (OperationCanceledException) { break; }
+                }
+            }
+
+            var duration = DateTime.Now - startTime;
+            ShowBatchSummary(total, passed, failed, failedFlows, duration);
+
+            _isBatchRunning = false;
+            _btnStopBatch.Visible = false;
+            _batchCts?.Dispose();
+            _batchCts = null;
+            UpdateBatchButtons();
+        }
+
+        private void StopBatchRun()
+        {
+            _batchCts?.Cancel();
+            AppLog.Info("Batch run stop requested");
+        }
+
+        private void ShowBatchSummary(int total, int passed, int failed,
+            List<(string flow, string reason)> failedFlows, TimeSpan duration)
+        {
+            var summary = new System.Text.StringBuilder();
+            summary.AppendLine("Batch Test Summary");
+            summary.AppendLine($"Total: {total} flows");
+            if (total > 0)
+            {
+                summary.AppendLine($"✅ Passed: {passed} ({(double)passed / total * 100:F1}%)");
+                summary.AppendLine($"❌ Failed: {failed} ({(double)failed / total * 100:F1}%)");
+            }
+            summary.AppendLine($"⏱️ Duration: {duration:mm\\:ss}");
+
+            if (failedFlows.Count > 0)
+            {
+                summary.AppendLine();
+                summary.AppendLine("Failed Flows:");
+                foreach (var (flow, reason) in failedFlows)
+                {
+                    var shortReason = reason.Length > 60 ? reason[..57] + "..." : reason;
+                    summary.AppendLine($"  • {flow}: {shortReason}");
+                }
+            }
+
+            AppLog.Info(summary.ToString());
+
+            _lblBatchProgress.Text = $"✅ Completed: {passed}/{total} passed";
+
+            MessageBox.Show(summary.ToString(), "Batch Test Summary",
+                MessageBoxButtons.OK,
+                failed == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning);
         }
 
         private void LstFlows_DrawItem(object? sender, DrawItemEventArgs e)
@@ -420,7 +677,7 @@ namespace FlowRunner
                 icon = "   ";
 
             using var textBrush = new SolidBrush(Color.Gainsboro);
-            e.Graphics.DrawString(icon + item.Name, e.Font ?? _lstFlows.Font, textBrush,
+            e.Graphics.DrawString(icon + item.ToString(), e.Font ?? _lstFlows.Font, textBrush,
                 e.Bounds.X + 4, e.Bounds.Y + 4);
             e.DrawFocusRectangle();
         }
@@ -442,8 +699,9 @@ namespace FlowRunner
         private sealed class FlowItem
         {
             public string Name { get; set; } = "";
+            public string Category { get; set; } = "";
             public string JsonPath { get; set; } = "";
-            public override string ToString() => Name;
+            public override string ToString() => $"[{Category}] {Name}";
         }
 
         private string? GetSelectedFlowJsonPath()
@@ -1458,8 +1716,8 @@ namespace FlowRunner
             _tooltip.SetToolTip(_btnRun, "Run the current flow (F11)");
             _tooltip.SetToolTip(_btnLoad, "Load an existing flow (Ctrl+O)");
             _tooltip.SetToolTip(_btnDelete, "Delete selected flow (Delete)");
-            _tooltip.SetToolTip(_cmbCategory, "Select flow category");
-            _tooltip.SetToolTip(_lstFlows, "Double-click to run a flow");
+            _tooltip.SetToolTip(_chkCategories, "Check categories to load their flows");
+            _tooltip.SetToolTip(_lstFlows, "Ctrl+Click or Shift+Click to multi-select; double-click to run a flow");
         }
 
         private void SetupPreviewBox(PictureBox pb)
