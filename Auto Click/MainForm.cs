@@ -195,6 +195,7 @@ namespace FlowRunner
             _canvasView.Dock = DockStyle.Fill;
             _canvasView.BackColor = Color.FromArgb(18, 22, 36);
             _canvasView.Visible = false;
+            _canvasView.AutoScroll = true;
             _canvasView.Paint += Canvas_Paint;
             _canvasView.MouseWheel += Canvas_MouseWheel;
             _canvas.Controls.Add(_canvasView);
@@ -209,17 +210,23 @@ namespace FlowRunner
                 Padding = new Padding(5)
             };
 
-            var btnZoomOut = CreateZoomButton("➖", "Zoom out");
+            var btnZoomOut = CreateZoomButton("➖", "Zoom out (Ctrl+Scroll Down)");
             btnZoomOut.Click += (_, __) => AdjustZoom(-0.1f);
-            var btnZoomReset = CreateZoomButton("1:1", "Actual size (100%)");
+            var btn50 = CreateZoomButton("50%", "Zoom to 50%");
+            btn50.Click += (_, __) => SetZoomLevel(0.5f);
+            var btnZoomReset = CreateZoomButton("100%", "Actual size (100%)");
             btnZoomReset.Click += (_, __) => SetZoom(ZoomMode.ActualSize);
-            var btnZoomIn = CreateZoomButton("➕", "Zoom in");
+            var btn200 = CreateZoomButton("200%", "Zoom to 200%");
+            btn200.Click += (_, __) => SetZoomLevel(2.0f);
+            var btnZoomIn = CreateZoomButton("➕", "Zoom in (Ctrl+Scroll Up)");
             btnZoomIn.Click += (_, __) => AdjustZoom(0.1f);
-            var btnZoomFit = CreateZoomButton("⊡", "Fit to window");
+            var btnZoomFit = CreateZoomButton("⊡ Fit", "Fit to window");
             btnZoomFit.Click += (_, __) => SetZoom(ZoomMode.FitToCanvas);
 
             zoomPanel.Controls.Add(btnZoomOut);
+            zoomPanel.Controls.Add(btn50);
             zoomPanel.Controls.Add(btnZoomReset);
+            zoomPanel.Controls.Add(btn200);
             zoomPanel.Controls.Add(btnZoomIn);
             zoomPanel.Controls.Add(btnZoomFit);
             _canvas.Controls.Add(zoomPanel);
@@ -1735,21 +1742,30 @@ namespace FlowRunner
             var g = e.Graphics;
             g.Clear(Color.FromArgb(18, 22, 36));
 
+            // Use nearest neighbor for pixel-perfect rendering (no blur)
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
+
             float scale = _canvasZoomLevel;
 
             if (_canvasZoomMode == ZoomMode.FitToCanvas)
             {
-                float scaleX = (float)_canvasView.Width / _canvasImage.Width;
-                float scaleY = (float)_canvasView.Height / _canvasImage.Height;
+                float scaleX = (float)_canvasView.ClientSize.Width / _canvasImage.Width;
+                float scaleY = (float)_canvasView.ClientSize.Height / _canvasImage.Height;
                 scale = Math.Min(scaleX, scaleY);
             }
 
             int drawW = (int)(_canvasImage.Width * scale);
             int drawH = (int)(_canvasImage.Height * scale);
-            int drawX = (_canvasView.Width - drawW) / 2;
-            int drawY = (_canvasView.Height - drawH) / 2;
 
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            // Center the image if it's smaller than the canvas; otherwise start from top-left
+            int drawX = Math.Max(0, (_canvasView.ClientSize.Width - drawW) / 2);
+            int drawY = Math.Max(0, (_canvasView.ClientSize.Height - drawH) / 2);
+
+            // Apply auto-scroll offset so the image scrolls correctly
+            drawX += _canvasView.AutoScrollPosition.X;
+            drawY += _canvasView.AutoScrollPosition.Y;
+
             g.DrawImage(_canvasImage, drawX, drawY, drawW, drawH);
 
             // Draw label
@@ -1765,18 +1781,21 @@ namespace FlowRunner
             }
 
             // Draw zoom level indicator
-            var zoomText = $"Zoom: {scale * 100:F0}%";
+            var zoomText = _canvasZoomMode == ZoomMode.FitToCanvas ? "Fit" : $"Zoom: {scale * 100:F0}%";
             using (var font = new Font("Segoe UI", 9f))
             using (var brush = new SolidBrush(Color.Gray))
             {
                 var size = g.MeasureString(zoomText, font);
-                g.DrawString(zoomText, font, brush, _canvasView.Width - size.Width - 10, _canvasView.Height - size.Height - 10);
+                g.DrawString(zoomText, font, brush, _canvasView.ClientSize.Width - size.Width - 10, _canvasView.ClientSize.Height - size.Height - 10);
             }
         }
 
         private void Canvas_MouseWheel(object? sender, MouseEventArgs e)
         {
             if (_canvasImage == null) return;
+
+            // Require Ctrl key for zoom via mouse wheel
+            if (!ModifierKeys.HasFlag(Keys.Control)) return;
 
             float delta = e.Delta > 0 ? 0.1f : -0.1f;
             AdjustZoom(delta);
@@ -1810,6 +1829,7 @@ namespace FlowRunner
         {
             _canvasZoomMode = ZoomMode.Custom;
             _canvasZoomLevel = Math.Max(0.1f, Math.Min(5.0f, _canvasZoomLevel + delta));
+            UpdateCanvasScrollSize();
             _canvasView.Invalidate();
         }
 
@@ -1818,7 +1838,30 @@ namespace FlowRunner
             _canvasZoomMode = mode;
             if (mode == ZoomMode.ActualSize)
                 _canvasZoomLevel = 1.0f;
+            UpdateCanvasScrollSize();
             _canvasView.Invalidate();
+        }
+
+        private void SetZoomLevel(float level)
+        {
+            _canvasZoomMode = ZoomMode.Custom;
+            _canvasZoomLevel = Math.Max(0.1f, Math.Min(5.0f, level));
+            UpdateCanvasScrollSize();
+            _canvasView.Invalidate();
+        }
+
+        private void UpdateCanvasScrollSize()
+        {
+            if (_canvasImage == null || _canvasZoomMode == ZoomMode.FitToCanvas)
+            {
+                _canvasView.AutoScrollMinSize = Size.Empty;
+                return;
+            }
+
+            _canvasView.AutoScrollMinSize = new Size(
+                (int)(_canvasImage.Width * _canvasZoomLevel),
+                (int)(_canvasImage.Height * _canvasZoomLevel)
+            );
         }
 
         private void ShowCheckpointComparison(Bitmap expected, Bitmap actual, double diffPercent, double allowedDiffPercent, int checkpointIndex)
@@ -1880,9 +1923,11 @@ namespace FlowRunner
             _canvasImage?.Dispose();
             _canvasImage = combined;
             _canvasLabel = $"❌ Checkpoint {checkpointIndex + 1} Failed - Comparison View";
-            _canvasZoomMode = ZoomMode.FitToCanvas;
+            _canvasZoomMode = ZoomMode.ActualSize;
+            _canvasZoomLevel = 1.0f;
             _split.Visible = false;
             _canvasView.Visible = true;
+            UpdateCanvasScrollSize();
             _canvasView.Invalidate();
         }
 
@@ -1895,6 +1940,7 @@ namespace FlowRunner
             _canvasZoomLevel = 1.0f;
             _split.Visible = false;
             _canvasView.Visible = true;
+            UpdateCanvasScrollSize();
             _canvasView.Invalidate();
         }
 
