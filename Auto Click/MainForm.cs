@@ -68,6 +68,9 @@ namespace FlowRunner
         private readonly PictureBox _previewExpected = new();
         private readonly PictureBox _previewActual = new();
 
+        private readonly ContextMenuStrip _categoryContextMenu = new();
+        private readonly ContextMenuStrip _flowContextMenu = new();
+
         private readonly Panel _canvasView = new();
 
         // Zoom / comparison canvas state
@@ -300,6 +303,8 @@ namespace FlowRunner
 
             InitializeTestSuiteUI();
             AddBatchButtons();
+            InitializeCategoryContextMenu();
+            InitializeFlowContextMenu();
 
             _hotkeys.KeyPressed += OnHotkey;
             _hotkeys.Start();
@@ -2004,6 +2009,521 @@ namespace FlowRunner
             {
                 AppLog.Exception("SafeInitSplit failed", ex);
             }
+        }
+
+        // ============= Context Menus =============
+        private void InitializeCategoryContextMenu()
+        {
+            _categoryContextMenu.BackColor = Color.FromArgb(30, 34, 46);
+            _categoryContextMenu.ForeColor = Color.Gainsboro;
+            _categoryContextMenu.Font = new Font("Segoe UI", 9.5f);
+
+            var deleteItem = new ToolStripMenuItem("🗑️ Delete Category");
+            deleteItem.Click += DeleteCategory_Click;
+            _categoryContextMenu.Items.Add(deleteItem);
+
+            var renameItem = new ToolStripMenuItem("✏️ Rename Category");
+            renameItem.Click += RenameCategory_Click;
+            _categoryContextMenu.Items.Add(renameItem);
+
+            _categoryContextMenu.Items.Add(new ToolStripSeparator());
+
+            var openFolderItem = new ToolStripMenuItem("📂 Open in Explorer");
+            openFolderItem.Click += OpenCategoryFolder_Click;
+            _categoryContextMenu.Items.Add(openFolderItem);
+
+            var statsItem = new ToolStripMenuItem("📊 Show Statistics");
+            statsItem.Click += ShowCategoryStats_Click;
+            _categoryContextMenu.Items.Add(statsItem);
+
+            _chkCategories.MouseDown += Categories_MouseDown;
+            _chkCategories.KeyDown += Categories_KeyDown;
+        }
+
+        private void InitializeFlowContextMenu()
+        {
+            _flowContextMenu.BackColor = Color.FromArgb(30, 34, 46);
+            _flowContextMenu.ForeColor = Color.Gainsboro;
+            _flowContextMenu.Font = new Font("Segoe UI", 9.5f);
+
+            var runItem = new ToolStripMenuItem("▶️ Run Flow");
+            runItem.Click += RunFlowFromMenu_Click;
+            runItem.Font = new Font("Segoe UI", 9.5f, FontStyle.Bold);
+            _flowContextMenu.Items.Add(runItem);
+
+            _flowContextMenu.Items.Add(new ToolStripSeparator());
+
+            var renameItem = new ToolStripMenuItem("✏️ Rename Flow");
+            renameItem.Click += RenameFlow_Click;
+            _flowContextMenu.Items.Add(renameItem);
+
+            var duplicateItem = new ToolStripMenuItem("📋 Duplicate Flow");
+            duplicateItem.Click += DuplicateFlow_Click;
+            _flowContextMenu.Items.Add(duplicateItem);
+
+            var deleteItem = new ToolStripMenuItem("🗑️ Delete Flow");
+            deleteItem.Click += DeleteFlow_Click;
+            _flowContextMenu.Items.Add(deleteItem);
+
+            _flowContextMenu.Items.Add(new ToolStripSeparator());
+
+            var openFolderItem = new ToolStripMenuItem("📂 Open in Explorer");
+            openFolderItem.Click += OpenFlowFolder_Click;
+            _flowContextMenu.Items.Add(openFolderItem);
+
+            _lstFlows.MouseDown += Flows_MouseDown;
+            _lstFlows.KeyDown += Flows_KeyDown;
+        }
+
+        private void Categories_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                var index = _chkCategories.IndexFromPoint(e.Location);
+                if (index >= 0 && index < _chkCategories.Items.Count)
+                {
+                    _chkCategories.SelectedIndex = index;
+                    _categoryContextMenu.Show(_chkCategories, e.Location);
+                }
+            }
+        }
+
+        private void Flows_MouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                var index = _lstFlows.IndexFromPoint(e.Location);
+                if (index >= 0 && index < _lstFlows.Items.Count)
+                {
+                    _lstFlows.SelectedIndex = index;
+                    _flowContextMenu.Show(_lstFlows, e.Location);
+                }
+            }
+        }
+
+        private void Categories_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Delete && _chkCategories.SelectedIndex >= 0)
+            {
+                DeleteCategory_Click(null, EventArgs.Empty);
+                e.Handled = true;
+            }
+        }
+
+        private void Flows_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Delete && _lstFlows.SelectedIndex >= 0)
+            {
+                DeleteFlow_Click(null, EventArgs.Empty);
+                e.Handled = true;
+            }
+        }
+
+        private void DeleteCategory_Click(object? sender, EventArgs e)
+        {
+            if (_chkCategories.SelectedIndex < 0) return;
+
+            var categoryDisplay = _chkCategories.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(categoryDisplay)) return;
+
+            var categoryName = GetCategoryNameFromItem(categoryDisplay);
+            var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(categoryName));
+
+            if (!Directory.Exists(categoryDir)) return;
+
+            var flowCount = Directory.GetDirectories(categoryDir)
+                .Count(d => File.Exists(Path.Combine(d, "flow.json")));
+
+            var message = flowCount > 0
+                ? $"Delete category '{categoryName}' and all {flowCount} flows inside it?\n\nThis cannot be undone!"
+                : $"Delete empty category '{categoryName}'?";
+
+            var result = MessageBox.Show(
+                message,
+                "Delete Category",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2
+            );
+
+            if (result == DialogResult.Yes)
+            {
+                try
+                {
+                    Directory.Delete(categoryDir, true);
+                    AppLog.Info($"Deleted category: {categoryName}");
+                    SetStatus($"✅ Deleted category: {categoryName}");
+                    RefreshFlowSelector();
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Exception($"Failed to delete category: {categoryName}", ex);
+                    MessageBox.Show(
+                        $"Failed to delete category:\n{ex.Message}",
+                        "Delete Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
+            }
+        }
+
+        private void RenameCategory_Click(object? sender, EventArgs e)
+        {
+            if (_chkCategories.SelectedIndex < 0) return;
+
+            var categoryDisplay = _chkCategories.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(categoryDisplay)) return;
+
+            var oldName = GetCategoryNameFromItem(categoryDisplay);
+            var oldDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(oldName));
+
+            if (!Directory.Exists(oldDir)) return;
+
+            var newName = ShowRenameDialog("Rename Category", "New category name:", oldName);
+            if (string.IsNullOrEmpty(newName) || newName == oldName) return;
+
+            var newDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(newName));
+
+            if (Directory.Exists(newDir))
+            {
+                MessageBox.Show(
+                    $"Category '{newName}' already exists!",
+                    "Rename Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning
+                );
+                return;
+            }
+
+            try
+            {
+                Directory.Move(oldDir, newDir);
+                AppLog.Info($"Renamed category: {oldName} → {newName}");
+                SetStatus($"✅ Renamed: {oldName} → {newName}");
+                RefreshFlowSelector();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Exception($"Failed to rename category: {oldName}", ex);
+                MessageBox.Show(
+                    $"Failed to rename category:\n{ex.Message}",
+                    "Rename Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private void RunFlowFromMenu_Click(object? sender, EventArgs e)
+        {
+            DoRunSelected();
+        }
+
+        private void DeleteFlow_Click(object? sender, EventArgs e)
+        {
+            if (_lstFlows.SelectedIndex < 0) return;
+
+            var flowItem = _lstFlows.SelectedItem as FlowItem;
+            if (flowItem == null) return;
+
+            var result = MessageBox.Show(
+                $"Delete flow '{flowItem.Name}' from category '{flowItem.Category}'?\n\nThis cannot be undone!",
+                "Delete Flow",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2
+            );
+
+            if (result == DialogResult.Yes)
+            {
+                try
+                {
+                    var flowDir = Path.Combine(
+                        FlowStorage.FlowsDir,
+                        FlowStorage.SafeFileName(flowItem.Category),
+                        FlowStorage.SafeFileName(flowItem.Name)
+                    );
+
+                    if (Directory.Exists(flowDir))
+                    {
+                        Directory.Delete(flowDir, true);
+                        AppLog.Info($"Deleted flow: {flowItem.Category}/{flowItem.Name}");
+                        SetStatus($"✅ Deleted: {flowItem.Name}");
+                        UpdateFlowsFromCheckedCategories();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Exception($"Failed to delete flow: {flowItem.Category}/{flowItem.Name}", ex);
+                    MessageBox.Show(
+                        $"Failed to delete flow:\n{ex.Message}",
+                        "Delete Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
+            }
+        }
+
+        private void RenameFlow_Click(object? sender, EventArgs e)
+        {
+            if (_lstFlows.SelectedIndex < 0) return;
+
+            var flowItem = _lstFlows.SelectedItem as FlowItem;
+            if (flowItem == null) return;
+
+            var newName = ShowRenameDialog("Rename Flow", "New flow name:", flowItem.Name);
+            if (string.IsNullOrEmpty(newName) || newName == flowItem.Name) return;
+
+            try
+            {
+                var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(flowItem.Category));
+                var oldFlowDir = Path.Combine(categoryDir, FlowStorage.SafeFileName(flowItem.Name));
+                var newFlowDir = Path.Combine(categoryDir, FlowStorage.SafeFileName(newName));
+
+                if (Directory.Exists(newFlowDir))
+                {
+                    MessageBox.Show(
+                        $"Flow '{newName}' already exists in category '{flowItem.Category}'!",
+                        "Rename Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+                    return;
+                }
+
+                Directory.Move(oldFlowDir, newFlowDir);
+                AppLog.Info($"Renamed flow: {flowItem.Category}/{flowItem.Name} → {newName}");
+                SetStatus($"✅ Renamed: {flowItem.Name} → {newName}");
+                UpdateFlowsFromCheckedCategories();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Exception($"Failed to rename flow: {flowItem.Category}/{flowItem.Name}", ex);
+                MessageBox.Show(
+                    $"Failed to rename flow:\n{ex.Message}",
+                    "Rename Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private void DuplicateFlow_Click(object? sender, EventArgs e)
+        {
+            if (_lstFlows.SelectedIndex < 0) return;
+
+            var flowItem = _lstFlows.SelectedItem as FlowItem;
+            if (flowItem == null) return;
+
+            var newName = ShowRenameDialog("Duplicate Flow", "New flow name:", $"{flowItem.Name} - Copy");
+            if (string.IsNullOrEmpty(newName)) return;
+
+            try
+            {
+                var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(flowItem.Category));
+                var sourceDir = Path.Combine(categoryDir, FlowStorage.SafeFileName(flowItem.Name));
+                var destDir = Path.Combine(categoryDir, FlowStorage.SafeFileName(newName));
+
+                if (Directory.Exists(destDir))
+                {
+                    MessageBox.Show(
+                        $"Flow '{newName}' already exists!",
+                        "Duplicate Failed",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning
+                    );
+                    return;
+                }
+
+                CopyDirectory(sourceDir, destDir);
+                AppLog.Info($"Duplicated flow: {flowItem.Category}/{flowItem.Name} → {newName}");
+                SetStatus($"✅ Duplicated: {flowItem.Name} → {newName}");
+                UpdateFlowsFromCheckedCategories();
+            }
+            catch (Exception ex)
+            {
+                AppLog.Exception($"Failed to duplicate flow: {flowItem.Category}/{flowItem.Name}", ex);
+                MessageBox.Show(
+                    $"Failed to duplicate flow:\n{ex.Message}",
+                    "Duplicate Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }
+        }
+
+        private static void CopyDirectory(string sourceDir, string destDir)
+        {
+            Directory.CreateDirectory(destDir);
+
+            foreach (var file in Directory.GetFiles(sourceDir))
+            {
+                var destFile = Path.Combine(destDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+
+            foreach (var dir in Directory.GetDirectories(sourceDir))
+            {
+                var destSubDir = Path.Combine(destDir, Path.GetFileName(dir));
+                CopyDirectory(dir, destSubDir);
+            }
+        }
+
+        private string? ShowRenameDialog(string title, string prompt, string defaultValue)
+        {
+            var inputForm = new Form
+            {
+                Text = title,
+                Width = 400,
+                Height = 150,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                BackColor = Color.FromArgb(30, 34, 46)
+            };
+
+            var label = new Label
+            {
+                Text = prompt,
+                Left = 20,
+                Top = 20,
+                Width = 350,
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 9.5f)
+            };
+
+            var textBox = new TextBox
+            {
+                Text = defaultValue,
+                Left = 20,
+                Top = 45,
+                Width = 340,
+                BackColor = Color.FromArgb(45, 50, 60),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 9.5f)
+            };
+
+            var btnOK = new Button
+            {
+                Text = "OK",
+                Left = 205,
+                Top = 75,
+                Width = 75,
+                BackColor = Color.FromArgb(52, 152, 219),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                DialogResult = DialogResult.OK
+            };
+
+            var btnCancel = new Button
+            {
+                Text = "Cancel",
+                Left = 285,
+                Top = 75,
+                Width = 75,
+                BackColor = Color.FromArgb(52, 73, 94),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                DialogResult = DialogResult.Cancel
+            };
+
+            inputForm.Controls.AddRange(new Control[] { label, textBox, btnOK, btnCancel });
+            inputForm.AcceptButton = btnOK;
+            inputForm.CancelButton = btnCancel;
+
+            textBox.SelectAll();
+
+            return inputForm.ShowDialog(this) == DialogResult.OK ? textBox.Text.Trim() : null;
+        }
+
+        private void OpenCategoryFolder_Click(object? sender, EventArgs e)
+        {
+            if (_chkCategories.SelectedIndex < 0) return;
+
+            var categoryDisplay = _chkCategories.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(categoryDisplay)) return;
+
+            var categoryName = GetCategoryNameFromItem(categoryDisplay);
+            var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(categoryName));
+
+            if (Directory.Exists(categoryDir))
+            {
+                try { System.Diagnostics.Process.Start("explorer.exe", categoryDir); }
+                catch (Exception ex) { MessageBox.Show($"Failed to open folder:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            }
+        }
+
+        private void OpenFlowFolder_Click(object? sender, EventArgs e)
+        {
+            if (_lstFlows.SelectedIndex < 0) return;
+
+            var flowItem = _lstFlows.SelectedItem as FlowItem;
+            if (flowItem == null) return;
+
+            var flowDir = Path.Combine(
+                FlowStorage.FlowsDir,
+                FlowStorage.SafeFileName(flowItem.Category),
+                FlowStorage.SafeFileName(flowItem.Name)
+            );
+
+            if (Directory.Exists(flowDir))
+            {
+                try { System.Diagnostics.Process.Start("explorer.exe", flowDir); }
+                catch (Exception ex) { MessageBox.Show($"Failed to open folder:\n{ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            }
+        }
+
+        private void ShowCategoryStats_Click(object? sender, EventArgs e)
+        {
+            if (_chkCategories.SelectedIndex < 0) return;
+
+            var categoryDisplay = _chkCategories.SelectedItem?.ToString();
+            if (string.IsNullOrEmpty(categoryDisplay)) return;
+
+            var categoryName = GetCategoryNameFromItem(categoryDisplay);
+            var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(categoryName));
+
+            if (!Directory.Exists(categoryDir)) return;
+
+            var flowDirs = Directory.GetDirectories(categoryDir);
+            var flowCount = flowDirs.Count(d => File.Exists(Path.Combine(d, "flow.json")));
+
+            long totalSize = 0;
+            int totalSteps = 0;
+            int totalCheckpoints = 0;
+
+            foreach (var flowDir in flowDirs)
+            {
+                var flowJsonPath = Path.Combine(flowDir, "flow.json");
+                if (!File.Exists(flowJsonPath)) continue;
+
+                try
+                {
+                    var flow = FlowStorage.LoadFlow(flowJsonPath);
+                    totalSteps += flow.Steps?.Count ?? 0;
+                    totalCheckpoints += flow.Steps?.Count(s => s.Kind == FlowStepKind.Checkpoint) ?? 0;
+                }
+                catch (Exception ex)
+                {
+                    AppLog.Exception($"Failed to load flow stats: {flowJsonPath}", ex);
+                }
+
+                foreach (var file in Directory.GetFiles(flowDir, "*", SearchOption.AllDirectories))
+                    totalSize += new FileInfo(file).Length;
+            }
+
+            var sizeInMB = totalSize / (1024.0 * 1024.0);
+
+            var stats = $"Category: {categoryName}\n\n" +
+                        $"Flows: {flowCount}\n" +
+                        $"Total Steps: {totalSteps}\n" +
+                        $"Total Checkpoints: {totalCheckpoints}\n" +
+                        $"Total Size: {sizeInMB:F2} MB";
+
+            MessageBox.Show(stats, "Category Statistics", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
     }
 }
