@@ -8,6 +8,8 @@ namespace FlowRunner
     public sealed class RegionSelectorForm : Form
     {
         private readonly Bitmap _frozen;
+        private readonly Bitmap _scaledPreview;
+        private readonly bool _ownScaledPreview;
         private readonly Rectangle _vs;
         private readonly Bitmap? _scaledPreviewBitmap; // Non-null only when a new scaled bitmap was created
         private Image? _scaledPreview;
@@ -18,6 +20,8 @@ namespace FlowRunner
 
         private Rectangle _selected;
         public Rectangle Selected => _selected;
+
+        private const int DimTextHeight = 20;
 
         private RegionSelectorForm(Bitmap frozen, Rectangle virtualScreen)
         {
@@ -34,30 +38,28 @@ namespace FlowRunner
             Bounds = _vs;
             Cursor = Cursors.Cross;
 
-            _scaledPreview = CreateScaledPreview(out _scaledPreviewBitmap);
+            // Pre-scale once for fast repeated painting; only allocate a new bitmap when
+            // the frozen screenshot dimensions differ from the virtual screen (e.g. DPI scaling).
+            if (frozen.Width == virtualScreen.Width && frozen.Height == virtualScreen.Height)
+            {
+                _scaledPreview = frozen;
+                _ownScaledPreview = false;
+            }
+            else
+            {
+                _scaledPreview = new Bitmap(virtualScreen.Width, virtualScreen.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var sg = Graphics.FromImage(_scaledPreview);
+                sg.InterpolationMode = InterpolationMode.Low;
+                sg.DrawImage(frozen, 0, 0, virtualScreen.Width, virtualScreen.Height);
+                _ownScaledPreview = true;
+            }
         }
 
-        private Image CreateScaledPreview(out Bitmap? scaledBitmap)
+        protected override void Dispose(bool disposing)
         {
-            scaledBitmap = null;
-            if (_frozen.Width > 3840 || _frozen.Height > 2160)
-            {
-                var scale = 0.5;
-                var newWidth = (int)(_frozen.Width * scale);
-                var newHeight = (int)(_frozen.Height * scale);
-
-                var scaled = new Bitmap(newWidth, newHeight);
-                using (var g = Graphics.FromImage(scaled))
-                {
-                    g.InterpolationMode = InterpolationMode.Low;
-                    g.PixelOffsetMode = PixelOffsetMode.Half;
-                    g.DrawImage(_frozen, 0, 0, newWidth, newHeight);
-                }
-                scaledBitmap = scaled;
-                return scaled;
-            }
-
-            return _frozen;
+            if (disposing && _ownScaledPreview)
+                _scaledPreview?.Dispose();
+            base.Dispose(disposing);
         }
 
         public static Rectangle Pick(Bitmap frozen, Rectangle virtualScreen)
@@ -124,13 +126,14 @@ namespace FlowRunner
         {
             base.OnPaint(e);
 
-            var imgToDraw = _scaledPreview ?? _frozen;
-
+            // Use low-quality settings for speed
             e.Graphics.InterpolationMode = InterpolationMode.Low;
-            e.Graphics.PixelOffsetMode = PixelOffsetMode.Half;
             e.Graphics.CompositingQuality = CompositingQuality.HighSpeed;
+            e.Graphics.SmoothingMode = SmoothingMode.None;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed;
 
-            e.Graphics.DrawImage(imgToDraw, new Rectangle(0, 0, Width, Height));
+            // ✅ تصویر Frozen را به اندازه فرم رسم کن (در DPI مختلف هم align میشه)
+            e.Graphics.DrawImageUnscaled(_scaledPreview, 0, 0);
 
             using (var overlay = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
                 e.Graphics.FillRectangle(overlay, new Rectangle(0, 0, Width, Height));
@@ -148,25 +151,14 @@ namespace FlowRunner
                 using var inner = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
                 e.Graphics.FillRectangle(inner, rClient);
 
-                var dims = $"{rScreen.Width} x {rScreen.Height}";
-                using var font = new Font("Segoe UI", 12f, FontStyle.Bold);
-                using var brush = new SolidBrush(Color.White);
-                using var bgBrush = new SolidBrush(Color.FromArgb(200, 0, 0, 0));
-
-                var size = e.Graphics.MeasureString(dims, font);
-                var textX = rClient.X + rClient.Width / 2 - size.Width / 2;
-                var textY = rClient.Y - 30;
-
-                e.Graphics.FillRectangle(bgBrush, textX - 4, textY - 2, size.Width + 8, size.Height + 4);
-                e.Graphics.DrawString(dims, font, brush, textX, textY);
-            }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _scaledPreviewBitmap?.Dispose();
+                // Show dimensions
+                var dimText = $"{rScreen.Width} × {rScreen.Height}";
+                using var dimFont = new Font("Segoe UI", 10f, FontStyle.Bold);
+                using var dimBrush = new SolidBrush(Color.Lime);
+                int tx = rClient.Left;
+                int ty = rClient.Bottom + 4;
+                if (ty + DimTextHeight > Height) ty = rClient.Top - DimTextHeight;
+                e.Graphics.DrawString(dimText, dimFont, dimBrush, tx, ty);
             }
             base.Dispose(disposing);
         }
