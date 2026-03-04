@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,7 +29,9 @@ namespace FlowRunner
         private readonly GlobalHotkeys _hotkeys = new();
 
         // ===== UI =====
-        private readonly TreeView _tree = new();
+        private readonly ComboBox _cmbCategory = new();
+        private readonly ListBox _lstFlows = new();
+        private readonly Panel _flowPanel = new();
         private readonly Panel _right = new();
         private readonly Panel _canvas = new();
 
@@ -47,12 +50,14 @@ namespace FlowRunner
         private readonly StatusStrip _status = new();
         private readonly ToolStripStatusLabel _lbl = new();
 
-        private readonly ImageList _treeIcons = new();
         private readonly Dictionary<string, RunOutcome> _runOutcomes = new(StringComparer.OrdinalIgnoreCase);
 
         private readonly SplitContainer _split = new();
         private readonly PictureBox _previewExpected = new();
         private readonly PictureBox _previewActual = new();
+
+        private readonly System.Windows.Forms.Timer _clock = new() { Interval = 1000 };
+        private readonly ToolTip _tooltip = new();
 
         public MainForm()
         {
@@ -67,24 +72,26 @@ namespace FlowRunner
 
             _lbl.Text = "Ready";
             _status.Items.Add(_lbl);
+            _status.BackColor = Color.FromArgb(23, 32, 42);
+            _status.ForeColor = Color.Gainsboro;
+            _status.Height = 28;
+            _lbl.Font = new Font("Segoe UI", 9f);
+            _lbl.Spring = true;
+            _lbl.TextAlign = ContentAlignment.MiddleLeft;
+
+            var lblTime = new ToolStripStatusLabel
+            {
+                Font = new Font("Segoe UI", 9f),
+                ForeColor = Color.Gray
+            };
+            _status.Items.Add(lblTime);
+
+            _clock.Tick += (_, __) => lblTime.Text = DateTime.Now.ToString("HH:mm:ss");
+            _clock.Start();
+
             Controls.Add(_status);
 
-            _tree.Dock = DockStyle.Left;
-            _tree.Width = 280;
-            _tree.HideSelection = false;
-            _tree.BackColor = Color.FromArgb(18, 22, 36);
-            _tree.ForeColor = Color.Gainsboro;
-            _tree.BorderStyle = BorderStyle.FixedSingle;
-            _tree.AfterSelect += (_, __) => LoadSelectedFlowToEditor();
-            _tree.NodeMouseDoubleClick += (_, __) => DoRunSelected();
-            Controls.Add(_tree);
-
-            _treeIcons.ImageSize = new Size(16, 16);
-            _treeIcons.ColorDepth = ColorDepth.Depth32Bit;
-            _treeIcons.Images.Add("none", MakeBlankIcon());
-            _treeIcons.Images.Add("ok", MakeOkIcon());
-            _treeIcons.Images.Add("fail", MakeFailIcon());
-            _tree.ImageList = _treeIcons;
+            InitializeFlowSelector();
 
             _right.Dock = DockStyle.Right;
             _right.Width = 300;
@@ -137,13 +144,13 @@ namespace FlowRunner
             _numLoops.BackColor = Color.FromArgb(22, 28, 45);
             _numLoops.ForeColor = Color.Gainsboro;
 
-            SetupButton(_btnNew, "New");
-            SetupButton(_btnRecord, "Record (F9)", accent: true);
-            SetupButton(_btnPause, "Pause (F10)");
-            SetupButton(_btnSave, "Save", accent: true);
-            SetupButton(_btnRun, "Run (F11)");
-            SetupButton(_btnLoad, "Load...");
-            SetupButton(_btnDelete, "Delete", danger: true);
+            StyleButton(_btnNew, "📝", "New", Color.FromArgb(52, 152, 219));
+            StyleButton(_btnRecord, "⏺", "Record (F9)", Color.FromArgb(231, 76, 60));
+            StyleButton(_btnPause, "⏸", "Pause (F10)", Color.FromArgb(243, 156, 18));
+            StyleButton(_btnSave, "💾", "Save", Color.FromArgb(46, 204, 113));
+            StyleButton(_btnRun, "▶", "Run (F11)", Color.FromArgb(155, 89, 182));
+            StyleButton(_btnLoad, "📂", "Load...", Color.FromArgb(52, 73, 94));
+            StyleButton(_btnDelete, "🗑", "Delete", Color.FromArgb(192, 57, 43));
 
             _right.Controls.Add(MakeLabel("Actions"));
             _right.Controls.Add(_btnDelete);
@@ -181,10 +188,11 @@ namespace FlowRunner
             FormClosed += (_, __) => { try { _hotkeys.Dispose(); } catch { } };
 
             Directory.CreateDirectory(FlowStorage.FlowsDir);
-            RefreshTree();
+            LoadCategories();
 
             DoNew();
             UpdateUi();
+            AddTooltips();
 
             AppLog.Info("MainForm initialized.");
         }
@@ -198,28 +206,21 @@ namespace FlowRunner
             public DateTime LastRunUtc { get; set; }
         }
 
-        private static void SetupButton(Button b, string text, bool accent = false, bool danger = false)
+        private static void StyleButton(Button btn, string emoji, string text, Color color)
         {
-            b.Text = text;
-            b.Dock = DockStyle.Top;
-            b.Height = 40;
+            btn.Text = $"{emoji} {text}";
+            btn.Height = 38;
+            btn.Dock = DockStyle.Top;
+            btn.BackColor = color;
+            btn.ForeColor = Color.White;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Font = new Font("Segoe UI", 10f, FontStyle.Regular);
+            btn.Cursor = Cursors.Hand;
+            btn.Padding = new Padding(8, 0, 8, 0);
 
-            b.FlatStyle = FlatStyle.Flat;
-            b.FlatAppearance.BorderSize = 1;
-            b.FlatAppearance.BorderColor = Color.FromArgb(40, 60, 100);
-
-            b.ForeColor = Color.White;
-
-            if (danger)
-                b.BackColor = Color.FromArgb(110, 35, 45);
-            else if (accent)
-                b.BackColor = Color.FromArgb(60, 40, 140);
-            else
-                b.BackColor = Color.FromArgb(22, 28, 45);
-
-            var normal = b.BackColor;
-            b.MouseEnter += (_, __) => b.BackColor = ControlPaint.Light(normal, 0.15f);
-            b.MouseLeave += (_, __) => b.BackColor = normal;
+            btn.MouseEnter += (s, e) => btn.BackColor = ControlPaint.Light(color, 0.1f);
+            btn.MouseLeave += (s, e) => btn.BackColor = color;
         }
 
         private static Control Spacer(int h) => new Panel { Dock = DockStyle.Top, Height = h };
@@ -234,54 +235,228 @@ namespace FlowRunner
 
         private void SetStatus(string s) => _lbl.Text = s;
 
-        // ============= Tree =============
-        private void RefreshTree()
+        // ============= Flow Selector =============
+        private void InitializeFlowSelector()
         {
-            _tree.BeginUpdate();
-            _tree.Nodes.Clear();
+            _flowPanel.Dock = DockStyle.Left;
+            _flowPanel.Width = 320;
+            _flowPanel.BackColor = Color.FromArgb(18, 22, 36);
+            _flowPanel.Padding = new Padding(12);
+            Controls.Add(_flowPanel);
 
-            Directory.CreateDirectory(FlowStorage.FlowsDir);
-
-            foreach (var catDir in Directory.GetDirectories(FlowStorage.FlowsDir))
+            var lblCategory = new Label
             {
-                var catName = Path.GetFileName(catDir);
-                var catNode = _tree.Nodes.Add(catName);
-                catNode.Tag = catName;
+                Text = "📁 Category",
+                Dock = DockStyle.Top,
+                Height = 30,
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _flowPanel.Controls.Add(lblCategory);
 
-                foreach (var flowDir in Directory.GetDirectories(catDir))
+            _cmbCategory.Dock = DockStyle.Top;
+            _cmbCategory.Height = 35;
+            _cmbCategory.BackColor = Color.FromArgb(30, 34, 46);
+            _cmbCategory.ForeColor = Color.Gainsboro;
+            _cmbCategory.FlatStyle = FlatStyle.Flat;
+            _cmbCategory.Font = new Font("Segoe UI", 10f);
+            _cmbCategory.DropDownStyle = ComboBoxStyle.DropDownList;
+            _cmbCategory.SelectedIndexChanged += (_, __) => LoadFlowsForCategory();
+            _flowPanel.Controls.Add(_cmbCategory);
+            _flowPanel.Controls.SetChildIndex(_cmbCategory, 0);
+
+            var spacer1 = new Panel { Dock = DockStyle.Top, Height = 12 };
+            _flowPanel.Controls.Add(spacer1);
+            _flowPanel.Controls.SetChildIndex(spacer1, 0);
+
+            var lblFlows = new Label
+            {
+                Text = "📄 Flows",
+                Dock = DockStyle.Top,
+                Height = 30,
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 11f, FontStyle.Bold),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+            _flowPanel.Controls.Add(lblFlows);
+            _flowPanel.Controls.SetChildIndex(lblFlows, 0);
+
+            _lstFlows.Dock = DockStyle.Fill;
+            _lstFlows.BackColor = Color.FromArgb(30, 34, 46);
+            _lstFlows.ForeColor = Color.Gainsboro;
+            _lstFlows.BorderStyle = BorderStyle.None;
+            _lstFlows.Font = new Font("Segoe UI", 10f);
+            _lstFlows.ItemHeight = 28;
+            _lstFlows.DrawMode = DrawMode.OwnerDrawFixed;
+            _lstFlows.DrawItem += FlowList_DrawItem;
+            _lstFlows.SelectedIndexChanged += (_, __) => LoadSelectedFlowToEditor();
+            _lstFlows.DoubleClick += (_, __) => DoRunSelected();
+            _flowPanel.Controls.Add(_lstFlows);
+
+            var btnPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 45,
+                BackColor = Color.FromArgb(18, 22, 36),
+                Padding = new Padding(0, 8, 0, 0)
+            };
+
+            var btnRefresh = new Button
+            {
+                Text = "🔄",
+                Width = 45,
+                Height = 35,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(52, 73, 94),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 12f)
+            };
+            btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(70, 90, 110);
+            btnRefresh.Click += (_, __) => { LoadCategories(); SetStatus("Flow list refreshed"); };
+            btnPanel.Controls.Add(btnRefresh);
+
+            var btnOpenFolder = new Button
+            {
+                Text = "📂",
+                Width = 45,
+                Height = 35,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(52, 73, 94),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Segoe UI", 12f),
+                Margin = new Padding(4, 0, 0, 0)
+            };
+            btnOpenFolder.FlatAppearance.BorderColor = Color.FromArgb(70, 90, 110);
+            btnOpenFolder.Click += (_, __) =>
+            {
+                try
                 {
-                    var flowName = Path.GetFileName(flowDir);
-                    var flowJson = Path.Combine(flowDir, "flow.json");
-                    if (!File.Exists(flowJson)) continue;
-
-                    var n = catNode.Nodes.Add(flowName);
-                    n.Tag = flowJson;
-
-                    if (_runOutcomes.TryGetValue(flowJson, out var o))
-                        n.ImageKey = n.SelectedImageKey = (o.HasMismatch ? "fail" : "ok");
-                    else
-                        n.ImageKey = n.SelectedImageKey = "none";
+                    if (!Directory.Exists(FlowStorage.FlowsDir))
+                        Directory.CreateDirectory(FlowStorage.FlowsDir);
+                    System.Diagnostics.Process.Start("explorer.exe", FlowStorage.FlowsDir);
                 }
+                catch (Exception ex)
+                {
+                    AppLog.Exception("OpenFlowsFolder failed", ex);
+                }
+            };
+            btnPanel.Controls.Add(btnOpenFolder);
 
-                catNode.Expand();
+            _flowPanel.Controls.Add(btnPanel);
+        }
+
+        private void FlowList_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0) return;
+
+            e.DrawBackground();
+
+            var item = _lstFlows.Items[e.Index].ToString();
+            if (item == null) return;
+
+            var bgColor = (e.State & DrawItemState.Selected) != 0
+                ? Color.FromArgb(41, 128, 185)
+                : Color.FromArgb(30, 34, 46);
+
+            using (var brush = new SolidBrush(bgColor))
+                e.Graphics.FillRectangle(brush, e.Bounds);
+
+            var icon = "📄";
+            var flowPath = GetFlowPathFromItem(item);
+            if (_runOutcomes.TryGetValue(flowPath, out var outcome))
+                icon = outcome.HasMismatch ? "❌" : "✅";
+
+            using (var iconFont = new Font("Segoe UI Emoji", 10f))
+            using (var textFont = new Font("Segoe UI", 10f))
+            using (var brush = new SolidBrush(Color.Gainsboro))
+            {
+                e.Graphics.DrawString(icon, iconFont, brush, e.Bounds.Left + 4, e.Bounds.Top + 6);
+                e.Graphics.DrawString(item, textFont, brush, e.Bounds.Left + 28, e.Bounds.Top + 6);
             }
 
-            if (_tree.Nodes.Count == 0)
+            e.DrawFocusRectangle();
+        }
+
+        private void LoadFlowsForCategory()
+        {
+            _lstFlows.Items.Clear();
+
+            if (_cmbCategory.SelectedItem == null) return;
+
+            var category = _cmbCategory.SelectedItem.ToString();
+            if (category == null) return;
+
+            var categoryDir = Path.Combine(FlowStorage.FlowsDir, FlowStorage.SafeFileName(category));
+            if (!Directory.Exists(categoryDir)) return;
+
+            foreach (var flowDir in Directory.GetDirectories(categoryDir))
+            {
+                var flowJsonPath = Path.Combine(flowDir, "flow.json");
+                if (File.Exists(flowJsonPath))
+                    _lstFlows.Items.Add(Path.GetFileName(flowDir));
+            }
+        }
+
+        private string GetFlowPathFromItem(string item)
+        {
+            if (_cmbCategory.SelectedItem == null) return "";
+            var category = _cmbCategory.SelectedItem.ToString();
+            if (category == null) return "";
+            return FlowStorage.GetFlowJsonPath(category, item);
+        }
+
+        private void LoadCategories()
+        {
+            var prevCategory = _cmbCategory.SelectedItem?.ToString();
+
+            _cmbCategory.Items.Clear();
+
+            if (!Directory.Exists(FlowStorage.FlowsDir))
+            {
+                Directory.CreateDirectory(FlowStorage.FlowsDir);
+                Directory.CreateDirectory(Path.Combine(FlowStorage.FlowsDir, "General"));
+            }
+
+            var categories = Directory.GetDirectories(FlowStorage.FlowsDir)
+                .Select(Path.GetFileName)
+                .Where(c => c != null)
+                .OrderBy(c => c)
+                .ToList();
+
+            foreach (var category in categories)
+                _cmbCategory.Items.Add(category!);
+
+            if (_cmbCategory.Items.Count == 0)
             {
                 Directory.CreateDirectory(Path.Combine(FlowStorage.FlowsDir, "General"));
-                _tree.Nodes.Add("General").Expand();
+                _cmbCategory.Items.Add("General");
             }
 
-            _tree.EndUpdate();
+            // Try to restore previous selection
+            if (prevCategory != null)
+            {
+                int idx = _cmbCategory.Items.IndexOf(prevCategory);
+                _cmbCategory.SelectedIndex = idx >= 0 ? idx : 0;
+            }
+            else if (_cmbCategory.Items.Count > 0)
+            {
+                _cmbCategory.SelectedIndex = 0;
+            }
         }
 
         private string? GetSelectedFlowJsonPath()
         {
-            if (_tree.SelectedNode?.Tag is string path &&
-                path.EndsWith("flow.json", StringComparison.OrdinalIgnoreCase))
-                return path;
+            if (_lstFlows.SelectedItem == null || _cmbCategory.SelectedItem == null)
+                return null;
 
-            return null;
+            var category = _cmbCategory.SelectedItem.ToString();
+            var flowName = _lstFlows.SelectedItem.ToString();
+
+            if (category == null || flowName == null) return null;
+
+            var path = FlowStorage.GetFlowJsonPath(category, flowName);
+            return File.Exists(path) ? path : null;
         }
 
         private void LoadSelectedFlowToEditor()
@@ -644,7 +819,7 @@ namespace FlowRunner
                 }
 
                 FlowStorage.SaveFlow(_flow);
-                RefreshTree();
+                LoadCategories();
 
                 SetStatus($"Saved: Documents\\FlowRunner\\flows\\{FlowStorage.SafeFileName(_flow.Category)}\\{FlowStorage.SafeFileName(_flow.Name)}\\flow.json");
                 AppLog.Info($"Saved flow: {_flow.Category}/{_flow.Name} steps={_flow.Steps.Count}");
@@ -674,7 +849,7 @@ namespace FlowRunner
                 PushModelToEditor();
                 ShowLastCheckpointIfAny(ofd.FileName);
 
-                RefreshTree();
+                LoadCategories();
                 SetStatus($"Loaded: {_flow.Category}/{_flow.Name}");
                 AppLog.Info($"Loaded via dialog: {_flow.Category}/{_flow.Name} from={ofd.FileName}");
 
@@ -703,7 +878,7 @@ namespace FlowRunner
             var path = GetSelectedFlowJsonPath();
             if (path == null)
             {
-                SetStatus("Select a flow in the tree (double-click also runs).");
+                SetStatus("Select a flow in the list (double-click also runs).");
                 return;
             }
 
@@ -734,7 +909,7 @@ namespace FlowRunner
                 LastMismatchStep = null,
                 LastRunUtc = DateTime.UtcNow
             };
-            RefreshTree();
+            _lstFlows.Invalidate();
 
             if (flow.Steps.Count == 0)
             {
@@ -960,7 +1135,7 @@ namespace FlowRunner
 
                                             ShowImagesOnCanvas(expOut, showPath);
                                             SetStatus($"CP FAIL {cpFail}/{cpTotal}  {flow.Name} / {s.Name}");
-                                            RefreshTree();
+                                            _lstFlows.Invalidate();
 
                                             lastRes?.DiffImage?.Dispose();
                                             lastRes = null;
@@ -993,7 +1168,7 @@ namespace FlowRunner
                 else SetStatus(hasMismatch ? "Run completed (with mismatches)." : "Run completed.");
 
                 AppLog.Info(_stopRequested ? "Run aborted." : "Run completed.");
-                RefreshTree();
+                _lstFlows.Invalidate();
             }
             catch (OperationCanceledException)
             {
@@ -1056,7 +1231,7 @@ namespace FlowRunner
 
                 FlowStorage.DeleteFlow(flow.Category, flow.Name);
 
-                RefreshTree();
+                _lstFlows.Invalidate();
                 SetStatus("Flow deleted.");
                 AppLog.Info($"Deleted flow: {flow.Category}/{flow.Name}");
 
@@ -1224,6 +1399,9 @@ namespace FlowRunner
             {
                 AppLog.Info("MainForm closing...");
                 _stopRequested = true;
+                _clock.Stop();
+                _clock.Dispose();
+                _tooltip.Dispose();
 
                 if (_isRecording)
                 {
@@ -1267,27 +1445,24 @@ namespace FlowRunner
             return s;
         }
 
-        private static Bitmap MakeBlankIcon() => new Bitmap(16, 16);
-
-        private static Bitmap MakeOkIcon()
+        private void AddTooltips()
         {
-            var bmp = new Bitmap(16, 16);
-            using var g = Graphics.FromImage(bmp);
-            g.Clear(Color.Transparent);
-            using var p = new Pen(Color.LimeGreen, 2);
-            g.DrawLines(p, new[] { new Point(3, 9), new Point(7, 13), new Point(13, 3) });
-            return bmp;
-        }
+            _tooltip.AutoPopDelay = 5000;
+            _tooltip.InitialDelay = 500;
+            _tooltip.ReshowDelay = 200;
+            _tooltip.ShowAlways = true;
+            _tooltip.BackColor = Color.FromArgb(30, 34, 46);
+            _tooltip.ForeColor = Color.Gainsboro;
 
-        private static Bitmap MakeFailIcon()
-        {
-            var bmp = new Bitmap(16, 16);
-            using var g = Graphics.FromImage(bmp);
-            g.Clear(Color.Transparent);
-            using var p = new Pen(Color.IndianRed, 2);
-            g.DrawLine(p, 3, 3, 13, 13);
-            g.DrawLine(p, 13, 3, 3, 13);
-            return bmp;
+            _tooltip.SetToolTip(_btnNew, "Create a new flow (Ctrl+N)");
+            _tooltip.SetToolTip(_btnRecord, "Start recording actions (F9)");
+            _tooltip.SetToolTip(_btnPause, "Pause/Resume recording (F10)");
+            _tooltip.SetToolTip(_btnSave, "Save current flow (Ctrl+S)");
+            _tooltip.SetToolTip(_btnRun, "Run the current flow (F11)");
+            _tooltip.SetToolTip(_btnLoad, "Load an existing flow (Ctrl+O)");
+            _tooltip.SetToolTip(_btnDelete, "Delete selected flow (Delete)");
+            _tooltip.SetToolTip(_cmbCategory, "Select flow category");
+            _tooltip.SetToolTip(_lstFlows, "Double-click to run a flow");
         }
 
         private void SetupPreviewBox(PictureBox pb)
