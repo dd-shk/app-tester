@@ -11,6 +11,8 @@ namespace FlowRunner
         private readonly Bitmap _scaledPreview;
         private readonly bool _ownScaledPreview;
         private readonly Rectangle _vs;
+        private readonly Bitmap? _scaledPreviewBitmap; // Non-null only when a new scaled bitmap was created
+        private Image? _scaledPreview;
 
         private bool _drag;
         private Point _startScreen;
@@ -33,7 +35,7 @@ namespace FlowRunner
             DoubleBuffered = true;
 
             StartPosition = FormStartPosition.Manual;
-            Bounds = _vs; // screen coords
+            Bounds = _vs;
             Cursor = Cursors.Cross;
 
             // Pre-scale once for fast repeated painting; only allocate a new bitmap when
@@ -83,8 +85,6 @@ namespace FlowRunner
             if (e.Button != MouseButtons.Left) return;
 
             _drag = true;
-
-            // ✅ DPI-safe: screen coords واقعی
             _startScreen = Cursor.Position;
             _endScreen = _startScreen;
 
@@ -96,9 +96,7 @@ namespace FlowRunner
         {
             if (!_drag) return;
 
-            // ✅ DPI-safe
             _endScreen = Cursor.Position;
-
             Invalidate();
             base.OnMouseMove(e);
         }
@@ -108,10 +106,7 @@ namespace FlowRunner
             if (!_drag || e.Button != MouseButtons.Left) return;
 
             _drag = false;
-
-            // ✅ DPI-safe
             _endScreen = Cursor.Position;
-
             _selected = Normalize(_startScreen, _endScreen);
 
             if (_selected.Width < 10 || _selected.Height < 10)
@@ -140,15 +135,12 @@ namespace FlowRunner
             // ✅ تصویر Frozen را به اندازه فرم رسم کن (در DPI مختلف هم align میشه)
             e.Graphics.DrawImageUnscaled(_scaledPreview, 0, 0);
 
-            // overlay
             using (var overlay = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
                 e.Graphics.FillRectangle(overlay, new Rectangle(0, 0, Width, Height));
 
             if (_drag)
             {
                 var rScreen = Normalize(_startScreen, _endScreen);
-
-                // screen -> client
                 var p1 = PointToClient(new Point(rScreen.Left, rScreen.Top));
                 var p2 = PointToClient(new Point(rScreen.Right, rScreen.Bottom));
                 var rClient = Normalize(p1, p2);
@@ -168,6 +160,7 @@ namespace FlowRunner
                 if (ty + DimTextHeight > Height) ty = rClient.Top - DimTextHeight;
                 e.Graphics.DrawString(dimText, dimFont, dimBrush, tx, ty);
             }
+            base.Dispose(disposing);
         }
 
         private static Rectangle Normalize(Point a, Point b)

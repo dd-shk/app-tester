@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -57,6 +58,9 @@ namespace FlowRunner
         private readonly SplitContainer _split = new();
         private readonly PictureBox _previewExpected = new();
         private readonly PictureBox _previewActual = new();
+
+        private readonly System.Windows.Forms.Timer _clock = new() { Interval = 1000 };
+        private readonly ToolTip _tooltip = new();
 
         public MainForm()
         {
@@ -243,6 +247,7 @@ namespace FlowRunner
 
             DoNew();
             UpdateUi();
+            AddTooltips();
 
             AppLog.Info("MainForm initialized.");
         }
@@ -256,7 +261,7 @@ namespace FlowRunner
             public DateTime LastRunUtc { get; set; }
         }
 
-        private static void SetupButton(Button b, string text, bool accent = false, bool danger = false)
+        private static void StyleButton(Button btn, string emoji, string text, Color color)
         {
             b.Text = text;
             b.Dock = DockStyle.Top;
@@ -1347,6 +1352,9 @@ namespace FlowRunner
             {
                 AppLog.Info("MainForm closing...");
                 _stopRequested = true;
+                _clock.Stop();
+                _clock.Dispose();
+                _tooltip.Dispose();
 
                 if (_isRecording)
                 {
@@ -1390,27 +1398,24 @@ namespace FlowRunner
             return s;
         }
 
-        private static Bitmap MakeBlankIcon() => new Bitmap(16, 16);
-
-        private static Bitmap MakeOkIcon()
+        private void AddTooltips()
         {
-            var bmp = new Bitmap(16, 16);
-            using var g = Graphics.FromImage(bmp);
-            g.Clear(Color.Transparent);
-            using var p = new Pen(Color.LimeGreen, 2);
-            g.DrawLines(p, new[] { new Point(3, 9), new Point(7, 13), new Point(13, 3) });
-            return bmp;
-        }
+            _tooltip.AutoPopDelay = 5000;
+            _tooltip.InitialDelay = 500;
+            _tooltip.ReshowDelay = 200;
+            _tooltip.ShowAlways = true;
+            _tooltip.BackColor = Color.FromArgb(30, 34, 46);
+            _tooltip.ForeColor = Color.Gainsboro;
 
-        private static Bitmap MakeFailIcon()
-        {
-            var bmp = new Bitmap(16, 16);
-            using var g = Graphics.FromImage(bmp);
-            g.Clear(Color.Transparent);
-            using var p = new Pen(Color.IndianRed, 2);
-            g.DrawLine(p, 3, 3, 13, 13);
-            g.DrawLine(p, 13, 3, 3, 13);
-            return bmp;
+            _tooltip.SetToolTip(_btnNew, "Create a new flow (Ctrl+N)");
+            _tooltip.SetToolTip(_btnRecord, "Start recording actions (F9)");
+            _tooltip.SetToolTip(_btnPause, "Pause/Resume recording (F10)");
+            _tooltip.SetToolTip(_btnSave, "Save current flow (Ctrl+S)");
+            _tooltip.SetToolTip(_btnRun, "Run the current flow (F11)");
+            _tooltip.SetToolTip(_btnLoad, "Load an existing flow (Ctrl+O)");
+            _tooltip.SetToolTip(_btnDelete, "Delete selected flow (Delete)");
+            _tooltip.SetToolTip(_cmbCategory, "Select flow category");
+            _tooltip.SetToolTip(_lstFlows, "Double-click to run a flow");
         }
 
         private void SetupPreviewBox(PictureBox pb)
