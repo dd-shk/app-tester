@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace FlowRunner
@@ -7,6 +8,8 @@ namespace FlowRunner
     public sealed class RegionSelectorForm : Form
     {
         private readonly Bitmap _frozen;
+        private readonly Bitmap _scaledPreview;
+        private readonly bool _ownScaledPreview;
         private readonly Rectangle _vs;
 
         private bool _drag;
@@ -15,6 +18,8 @@ namespace FlowRunner
 
         private Rectangle _selected;
         public Rectangle Selected => _selected;
+
+        private const int DimTextHeight = 20;
 
         private RegionSelectorForm(Bitmap frozen, Rectangle virtualScreen)
         {
@@ -30,6 +35,29 @@ namespace FlowRunner
             StartPosition = FormStartPosition.Manual;
             Bounds = _vs; // screen coords
             Cursor = Cursors.Cross;
+
+            // Pre-scale once for fast repeated painting; only allocate a new bitmap when
+            // the frozen screenshot dimensions differ from the virtual screen (e.g. DPI scaling).
+            if (frozen.Width == virtualScreen.Width && frozen.Height == virtualScreen.Height)
+            {
+                _scaledPreview = frozen;
+                _ownScaledPreview = false;
+            }
+            else
+            {
+                _scaledPreview = new Bitmap(virtualScreen.Width, virtualScreen.Height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                using var sg = Graphics.FromImage(_scaledPreview);
+                sg.InterpolationMode = InterpolationMode.Low;
+                sg.DrawImage(frozen, 0, 0, virtualScreen.Width, virtualScreen.Height);
+                _ownScaledPreview = true;
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _ownScaledPreview)
+                _scaledPreview?.Dispose();
+            base.Dispose(disposing);
         }
 
         public static Rectangle Pick(Bitmap frozen, Rectangle virtualScreen)
@@ -103,8 +131,14 @@ namespace FlowRunner
         {
             base.OnPaint(e);
 
+            // Use low-quality settings for speed
+            e.Graphics.InterpolationMode = InterpolationMode.Low;
+            e.Graphics.CompositingQuality = CompositingQuality.HighSpeed;
+            e.Graphics.SmoothingMode = SmoothingMode.None;
+            e.Graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed;
+
             // ✅ تصویر Frozen را به اندازه فرم رسم کن (در DPI مختلف هم align میشه)
-            e.Graphics.DrawImage(_frozen, new Rectangle(0, 0, Width, Height));
+            e.Graphics.DrawImageUnscaled(_scaledPreview, 0, 0);
 
             // overlay
             using (var overlay = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
@@ -124,6 +158,15 @@ namespace FlowRunner
 
                 using var inner = new SolidBrush(Color.FromArgb(40, 255, 255, 255));
                 e.Graphics.FillRectangle(inner, rClient);
+
+                // Show dimensions
+                var dimText = $"{rScreen.Width} × {rScreen.Height}";
+                using var dimFont = new Font("Segoe UI", 10f, FontStyle.Bold);
+                using var dimBrush = new SolidBrush(Color.Lime);
+                int tx = rClient.Left;
+                int ty = rClient.Bottom + 4;
+                if (ty + DimTextHeight > Height) ty = rClient.Top - DimTextHeight;
+                e.Graphics.DrawString(dimText, dimFont, dimBrush, tx, ty);
             }
         }
 
