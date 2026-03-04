@@ -9,6 +9,7 @@ namespace FlowRunner
     {
         private readonly Bitmap _frozen;
         private readonly Rectangle _vs;
+        private readonly Bitmap? _scaledPreviewBitmap; // Non-null only when a new scaled bitmap was created
         private Image? _scaledPreview;
 
         private bool _drag;
@@ -33,11 +34,12 @@ namespace FlowRunner
             Bounds = _vs;
             Cursor = Cursors.Cross;
 
-            _scaledPreview = CreateScaledPreview();
+            _scaledPreview = CreateScaledPreview(out _scaledPreviewBitmap);
         }
 
-        private Image CreateScaledPreview()
+        private Image CreateScaledPreview(out Bitmap? scaledBitmap)
         {
+            scaledBitmap = null;
             if (_frozen.Width > 3840 || _frozen.Height > 2160)
             {
                 var scale = 0.5;
@@ -51,6 +53,7 @@ namespace FlowRunner
                     g.PixelOffsetMode = PixelOffsetMode.Half;
                     g.DrawImage(_frozen, 0, 0, newWidth, newHeight);
                 }
+                scaledBitmap = scaled;
                 return scaled;
             }
 
@@ -163,8 +166,7 @@ namespace FlowRunner
         {
             if (disposing)
             {
-                if (_scaledPreview != _frozen)
-                    _scaledPreview?.Dispose();
+                _scaledPreviewBitmap?.Dispose();
             }
             base.Dispose(disposing);
         }

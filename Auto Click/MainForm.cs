@@ -56,6 +56,9 @@ namespace FlowRunner
         private readonly PictureBox _previewExpected = new();
         private readonly PictureBox _previewActual = new();
 
+        private readonly System.Windows.Forms.Timer _clock = new() { Interval = 1000 };
+        private readonly ToolTip _tooltip = new();
+
         public MainForm()
         {
             Text = "FlowRunner";
@@ -83,9 +86,8 @@ namespace FlowRunner
             };
             _status.Items.Add(lblTime);
 
-            var clock = new System.Windows.Forms.Timer { Interval = 1000 };
-            clock.Tick += (_, __) => lblTime.Text = DateTime.Now.ToString("HH:mm:ss");
-            clock.Start();
+            _clock.Tick += (_, __) => lblTime.Text = DateTime.Now.ToString("HH:mm:ss");
+            _clock.Start();
 
             Controls.Add(_status);
 
@@ -1397,6 +1399,9 @@ namespace FlowRunner
             {
                 AppLog.Info("MainForm closing...");
                 _stopRequested = true;
+                _clock.Stop();
+                _clock.Dispose();
+                _tooltip.Dispose();
 
                 if (_isRecording)
                 {
@@ -1442,25 +1447,22 @@ namespace FlowRunner
 
         private void AddTooltips()
         {
-            var tooltip = new ToolTip
-            {
-                AutoPopDelay = 5000,
-                InitialDelay = 500,
-                ReshowDelay = 200,
-                ShowAlways = true,
-                BackColor = Color.FromArgb(30, 34, 46),
-                ForeColor = Color.Gainsboro
-            };
+            _tooltip.AutoPopDelay = 5000;
+            _tooltip.InitialDelay = 500;
+            _tooltip.ReshowDelay = 200;
+            _tooltip.ShowAlways = true;
+            _tooltip.BackColor = Color.FromArgb(30, 34, 46);
+            _tooltip.ForeColor = Color.Gainsboro;
 
-            tooltip.SetToolTip(_btnNew, "Create a new flow (Ctrl+N)");
-            tooltip.SetToolTip(_btnRecord, "Start recording actions (F9)");
-            tooltip.SetToolTip(_btnPause, "Pause/Resume recording (F10)");
-            tooltip.SetToolTip(_btnSave, "Save current flow (Ctrl+S)");
-            tooltip.SetToolTip(_btnRun, "Run the current flow (F11)");
-            tooltip.SetToolTip(_btnLoad, "Load an existing flow (Ctrl+O)");
-            tooltip.SetToolTip(_btnDelete, "Delete selected flow (Delete)");
-            tooltip.SetToolTip(_cmbCategory, "Select flow category");
-            tooltip.SetToolTip(_lstFlows, "Double-click to run a flow");
+            _tooltip.SetToolTip(_btnNew, "Create a new flow (Ctrl+N)");
+            _tooltip.SetToolTip(_btnRecord, "Start recording actions (F9)");
+            _tooltip.SetToolTip(_btnPause, "Pause/Resume recording (F10)");
+            _tooltip.SetToolTip(_btnSave, "Save current flow (Ctrl+S)");
+            _tooltip.SetToolTip(_btnRun, "Run the current flow (F11)");
+            _tooltip.SetToolTip(_btnLoad, "Load an existing flow (Ctrl+O)");
+            _tooltip.SetToolTip(_btnDelete, "Delete selected flow (Delete)");
+            _tooltip.SetToolTip(_cmbCategory, "Select flow category");
+            _tooltip.SetToolTip(_lstFlows, "Double-click to run a flow");
         }
 
         private void SetupPreviewBox(PictureBox pb)
