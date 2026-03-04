@@ -10,7 +10,7 @@ using System.Windows.Forms;
 
 namespace FlowRunner
 {
-    public sealed class MainForm : Form
+    public sealed partial class MainForm : Form
     {
         // ===== State =====
         private FlowDefinition _flow = new();
@@ -173,6 +173,8 @@ namespace FlowRunner
             _btnRun.Click += (_, __) => DoRunSelected();
             _btnLoad.Click += (_, __) => DoLoadDialog();
             _btnDelete.Click += (_, __) => DoDeleteSelected();
+
+            InitializeTestSuiteUI();
 
             _hotkeys.KeyPressed += OnHotkey;
             _hotkeys.Start();
