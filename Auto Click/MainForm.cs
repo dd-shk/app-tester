@@ -112,7 +112,7 @@ namespace FlowRunner
             _flowPanel.BackColor = Color.FromArgb(18, 22, 36);
 
             _chkCategories.Dock = DockStyle.Top;
-            _chkCategories.Height = 120;
+            _chkCategories.Height = 700;
             _chkCategories.BackColor = Color.FromArgb(30, 34, 46);
             _chkCategories.ForeColor = Color.Gainsboro;
             _chkCategories.BorderStyle = BorderStyle.None;
